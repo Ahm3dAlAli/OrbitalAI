@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from orbitsight import data as D
 from orbitsight.config import DEFAULT_CONFIG, sensor_for_sequence
 from orbitsight.evt_model import voxelize
-from orbitsight.evt_centernet import EventCenterNet, decode
+from orbitsight.evt_centernet import EventCenterNet, decode, decode_peaks
 
 
 def load(path, device):
@@ -65,7 +65,7 @@ def _predict(model, x, tta):
 
 
 @torch.no_grad()
-def run(ev, seq, models, cfgs, cfg, thresh, tta, device, batch=128):
+def run(ev, seq, models, cfgs, cfg, thresh, tta, device, batch=128, topk=1):
     """Ensemble over models that may have DIFFERENT grids/tbins.  Each model is
     fed a voxel at its own grid; heatmap/size/offset maps are resized to a common
     resolution (the finest member's heatmap) before averaging — so scale-diverse
@@ -108,15 +108,18 @@ def run(ev, seq, models, cfgs, cfg, thresh, tta, device, batch=128):
         k = len(models)
         p = (hm_sum / k).clamp(1e-6, 1 - 1e-6)
         logit = torch.log(p / (1 - p))
-        dec = decode(logit.cpu(), (wh_sum / k).cpu(), (off_sum / k).cpu(), topk=1)
+        if topk > 1:      # multi-object: local-maxima NMS peaks (e.g. Stars3 field)
+            dec = decode_peaks(logit.cpu(), (wh_sum / k).cpu(), (off_sum / k).cpu(), topk=topk)
+        else:
+            dec = decode(logit.cpu(), (wh_sum / k).cpu(), (off_sum / k).cpu(), topk=1)
         for j, w in enumerate(wbuf):
-            s, cx, cy, bw, bh = dec[j][0]
-            if s >= thresh:
-                dets.append(D.Detection(w.start_us, w.end_us,
-                    int(round(np.clip(cx * sn.width, 0, sn.width - 1))),
-                    int(round(np.clip(cy * sn.height, 0, sn.height - 1))),
-                    max(int(round(bw * sn.width)), 1), max(int(round(bh * sn.height)), 1),
-                    float(s)))
+            for s, cx, cy, bw, bh in dec[j]:
+                if s >= thresh:
+                    dets.append(D.Detection(w.start_us, w.end_us,
+                        int(round(np.clip(cx * sn.width, 0, sn.width - 1))),
+                        int(round(np.clip(cy * sn.height, 0, sn.height - 1))),
+                        max(int(round(bw * sn.width)), 1), max(int(round(bh * sn.height)), 1),
+                        float(s)))
         wbuf.clear()
 
     for win in wins:
@@ -135,6 +138,8 @@ def main():
     ap.add_argument("--sequences", nargs="*", default=None)
     ap.add_argument("--thresh", type=float, default=0.3)
     ap.add_argument("--tta", action="store_true")
+    ap.add_argument("--topk", type=int, default=1,
+                    help=">1 emits multiple boxes/window (multi-object, e.g. Stars3)")
     ap.add_argument("--device", default="auto")
     args = ap.parse_args()
     cfg = DEFAULT_CONFIG
@@ -155,7 +160,7 @@ def main():
             continue
         ev = D.Events.from_npy(p)
         t0 = time.perf_counter()
-        dets, nw = run(ev, seq, models, cfgs, cfg, args.thresh, args.tta, device)
+        dets, nw = run(ev, seq, models, cfgs, cfg, args.thresh, args.tta, device, topk=args.topk)
         D.write_predictions(os.path.join(args.out_dir, seq + D.GT_SUFFIX), dets)
         print(f"[{i:2d}/{len(seqs)}] {seq[:36]:36s} win={nw:5d} det={len(dets):5d} "
               f"{1000*(time.perf_counter()-t0)/max(nw,1):.2f} ms/win")
