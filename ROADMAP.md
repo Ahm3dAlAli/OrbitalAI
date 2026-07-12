@@ -1,8 +1,8 @@
 # OrbitSight — Roadmap: Building the Most Accurate Real-Time RSO Detector
 
-*How we went from a 0.069 baseline to a **0.675** (→ ~0.70) mAP event-native
-detector that runs under the 40 ms real-time budget, and the ablations that
-justify every design choice.*
+*How we went from a 0.069 baseline to a **0.651 real-time** (single model, ~17 ms
+CPU) / **0.675 offline** mAP event-native detector, and the ablations that justify
+every design choice. Real-time costs only 0.024 mAP over the offline maximum.*
 
 This document is the engineering narrative behind the numbers. It maps directly
 onto the four technical scoring criteria: **AI approach & ablation**, **detection
@@ -136,19 +136,25 @@ End-to-end per-window latency, broken into **voxelize → forward → decode**, 
 `scripts/benchmark_latency.py`. Streaming regime (batch = 1) is the real-time
 number a deployment sees.
 
-**Measured now (grid-128 CenterNet, laptop CPU, single-thread):**
+> **Real-time vs offline — the honest distinction (criterion #3).** The
+> **deployed real-time** config is a **single `g192_ctx` model** on every sensor
+> (one forward pass/window): **mAP 0.651 at ~17 ms/window CPU** — inside the 40 ms
+> budget. The higher **0.675** headline adds **cross-grid ensembling (EVK4) + TTA
+> (3× forward passes)** which costs **~48 ms** → **offline only**. So:
+> **real-time = 0.651, offline max = 0.675** — real-time costs just **0.024 mAP**.
+
+**Measured (deployed real-time single model g192_ctx, grid-192 ctx=3, laptop CPU, batch=1):**
 
 | Sensor | Vox | Fwd | Dec | **Total** | < 40 ms? |
 |--------|-----|-----|-----|-----------|----------|
-| EVK4 1280×720 | 1.34 | 13.89 | 0.19 | **15.4 ms** | ✅ |
-| DAVIS 346×260 | 0.72 | 16.46 | 0.21 | **17.4 ms** | ✅ |
-| DVX 640×480 | 0.51 | 13.79 | 0.16 | **14.5 ms** | ✅ |
+| EVK4 1280×720 | 3.96 | 14.93 | 0.12 | **19.0 ms** | ✅ |
+| DAVIS 346×260 | 1.89 | 15.28 | 0.12 | **17.3 ms** | ✅ |
+| DVX 640×480 | 1.71 | 15.77 | 0.12 | **17.6 ms** | ✅ |
 
 ![Latency breakdown](docs/figures/latency_breakdown.png)
 
-**Even on CPU the pipeline is real-time** — comfortably inside the 40 ms budget,
-with headroom on every sensor. On GPU (evaluation hardware) the forward pass
-drops to a few ms. Reproduce / regenerate the official figure on rolf:
+**The deployed single-model pipeline is real-time on CPU** — inside the 40 ms
+budget on every sensor. On GPU the forward pass drops to a few ms. Reproduce:
 
 ```bash
 # GPU streaming latency for the deployed temporal model:
@@ -196,9 +202,10 @@ Example animations + failure galleries are generated under `docs/vis/`.
 
 | Item | Status |
 |------|--------|
-| Best **confirmed** accuracy | **mAP 0.675** (temporal CenterNet + TTA), measured |
-| Temporal ensemble | **training on rolf** — projected ~0.70 |
-| Latency < 40 ms | ✅ measured (real-time on CPU; GPU headroom) |
+| **Real-time** accuracy (deployed) | **mAP 0.651** — single g192_ctx model, ~17 ms/window CPU |
+| **Offline** max accuracy | **mAP 0.675** — router + cross-grid + TTA (~48 ms, not real-time) |
+| Latency < 40 ms | ✅ measured for the deployed single model (0.651) |
+| DVX ceiling probe | 5 post-hoc levers tried; ≤ +0.004 — DVX near detection ceiling |
 | Visualization tool | ✅ `scripts/visualize.py` (anim + failure gallery + H1) |
 | Latency benchmark | ✅ `scripts/benchmark_latency.py` |
 | Docker image (deliverable) | ✅ `Dockerfile` + `run_infer.sh` — reproducible CPU inference, validated end-to-end |

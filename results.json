@@ -1,15 +1,24 @@
 {
-  "_comment": "Canonical MEASURED results for OrbitSight (frozen evaluate.py on the held-out test set, and benchmark_latency.py). Single source of truth: scripts/make_figures.py reads this file. Update it when a new run lands, then re-run scripts/build_all.sh.",
-  "best_config": "per-sensor router: EVK4 -> cross-grid ensemble; DAVIS/DVX -> temporal-context CenterNet + TTA",
+  "_comment": "Canonical MEASURED results for OrbitSight (frozen evaluate.py + benchmark_latency.py). Single source of truth: scripts/make_figures.py reads this file. IMPORTANT distinction: the REAL-TIME deployable config is a single model (<40ms CPU) scoring 0.651; the OFFLINE max config adds cross-grid ensembling + TTA to reach 0.675 but is NOT real-time.",
+  "real_time": {
+    "config": "single g192_ctx model on all sensors (test_ctx) — one forward pass/window",
+    "mAP": 0.651, "latency_ms_cpu": 17, "note": "meets criterion #3 (<40ms CPU)",
+    "per_sequence": [["EVK4", 0.859], ["DAVIS", 0.729], ["Stars3", 0.545], ["Thuraya3", 0.469]]
+  },
+  "offline": {
+    "config": "router: EVK4 -> cross-grid ensemble; DAVIS/DVX -> temporal model + TTA (router_ctta)",
+    "mAP": 0.675, "latency_ms_cpu": 48, "note": "max accuracy; ~48ms (TTA=3 passes) -> NOT real-time"
+  },
+  "best_config": "OFFLINE max: router_ctta (0.675). REAL-TIME deployed: single g192_ctx (0.651).",
   "overall": {
     "mAP": 0.675, "precision": 0.575, "recall": 0.761, "f1": 0.655,
     "tp": 5385, "fp": 3976, "fn": 1691
   },
   "per_sequence": [
     ["EVK4\nmag7.3",   0.896, "EVK4"],
-    ["DAVIS\nSAOCOM1B", 0.729, "DAVIS"],
-    ["DVX\nStars3",    0.545, "DVX"],
-    ["DVX\nThuraya3",  0.469, "DVX"]
+    ["DAVIS\nSAOCOM1B", 0.774, "DAVIS"],
+    ["DVX\nStars3",    0.555, "DVX"],
+    ["DVX\nThuraya3",  0.474, "DVX"]
   ],
   "roadmap": [
     ["Broken\nglobal-reg", 0.016],
@@ -19,8 +28,8 @@
     ["Event\naugment", 0.398],
     ["Grid-192\n+box calib", 0.454],
     ["Ensemble\n+stack", 0.554],
-    ["Temporal\ncontext", 0.660],
-    ["+ TTA", 0.675]
+    ["Real-time\nsingle (0.651)", 0.651],
+    ["Offline\n+TTA", 0.675]
   ],
   "ensemble_projected": 0.70,
   "temporal_gain": [
@@ -28,10 +37,10 @@
     ["DAVIS SAOCOM1B", 0.617, 0.729]
   ],
   "latency_ms": [
-    ["EVK4\n1280x720", 1.34, 13.89, 0.19],
-    ["DAVIS\n346x260", 0.72, 16.46, 0.21],
-    ["DVX\n640x480",   0.51, 13.79, 0.16]
+    ["EVK4\n1280x720", 3.96, 14.93, 0.12],
+    ["DAVIS\n346x260", 1.89, 15.28, 0.12],
+    ["DVX\n640x480",   1.71, 15.77, 0.12]
   ],
   "budget_ms": 40.0,
-  "latency_note": "grid-128 CenterNet, laptop CPU, streaming (batch=1). Re-measure the deployed g192_ctx model on GPU with scripts/benchmark_latency.py."
+  "latency_note": "Deployed real-time config: single g192_ctx (grid-192, ctx=3), laptop CPU, streaming (batch=1) -> 15-19 ms/window, well under 40ms. TTA/ensemble variants (0.675) are offline only (~48-180ms)."
 }

@@ -2,6 +2,86 @@
   "gt_dir": "OrbitSight_Dataset/Testing_sets",
   "ranked": [
     {
+      "dir": "router_ctta",
+      "mAP": 0.675,
+      "sequences": 4
+    },
+    {
+      "dir": "router_best2",
+      "mAP": 0.66,
+      "sequences": 4
+    },
+    {
+      "dir": "test_ctx",
+      "mAP": 0.6507,
+      "sequences": 4
+    },
+    {
+      "dir": "test_ctx_stack",
+      "mAP": 0.6482,
+      "sequences": 4
+    },
+    {
+      "dir": "router_ctx",
+      "mAP": 0.6295,
+      "sequences": 4
+    },
+    {
+      "dir": "test_ctx_tta",
+      "mAP": 0.6013,
+      "sequences": 3
+    },
+    {
+      "dir": "router_final",
+      "mAP": 0.5542,
+      "sequences": 4
+    },
+    {
+      "dir": "test_ens",
+      "mAP": 0.5474,
+      "sequences": 4
+    },
+    {
+      "dir": "test_ens_stack",
+      "mAP": 0.5474,
+      "sequences": 4
+    },
+    {
+      "dir": "test_xg",
+      "mAP": 0.5225,
+      "sequences": 4
+    },
+    {
+      "dir": "test_xg_stack",
+      "mAP": 0.5157,
+      "sequences": 4
+    },
+    {
+      "dir": "test_g192_stack",
+      "mAP": 0.4951,
+      "sequences": 4
+    },
+    {
+      "dir": "test_g192",
+      "mAP": 0.4896,
+      "sequences": 4
+    },
+    {
+      "dir": "router_stack",
+      "mAP": 0.4543,
+      "sequences": 4
+    },
+    {
+      "dir": "router_best",
+      "mAP": 0.4488,
+      "sequences": 4
+    },
+    {
+      "dir": "test_aug",
+      "mAP": 0.412,
+      "sequences": 4
+    },
+    {
       "dir": "testing_router2",
       "mAP": 0.3983,
       "sequences": 4
@@ -9,6 +89,21 @@
     {
       "dir": "testing_cnet_aug",
       "mAP": 0.3797,
+      "sequences": 4
+    },
+    {
+      "dir": "router_g192",
+      "mAP": 0.3608,
+      "sequences": 4
+    },
+    {
+      "dir": "router_big",
+      "mAP": 0.3478,
+      "sequences": 3
+    },
+    {
+      "dir": "router_aug",
+      "mAP": 0.3255,
       "sequences": 4
     },
     {
@@ -32,6 +127,21 @@
       "sequences": 4
     },
     {
+      "dir": "test_noaug",
+      "mAP": 0.0856,
+      "sequences": 4
+    },
+    {
+      "dir": "test_noaug128",
+      "mAP": 0.0856,
+      "sequences": 4
+    },
+    {
+      "dir": "test_ens_big_stack",
+      "mAP": 0.0736,
+      "sequences": 2
+    },
+    {
       "dir": "testing_evt2",
       "mAP": 0.0164,
       "sequences": 4
@@ -53,8 +163,8 @@
     }
   ],
   "winner": {
-    "dir": "testing_router2",
-    "mAP": 0.3983,
+    "dir": "router_ctta",
+    "mAP": 0.675,
     "sequences": 4
   }
 }
