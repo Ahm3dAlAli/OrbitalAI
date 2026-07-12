@@ -1,0 +1,44 @@
+# ─── Dataset (large, distributed separately — do NOT commit) ───────────────
+OrbitSight_Dataset/
+*.npy
+*.mp4
+# event/GT raw files if placed at the root
+*_labeled_events.npy
+*_bb_windows_40ms.txt
+
+# ─── Model weights & generated outputs ─────────────────────────────────────
+models/*.joblib
+predictions/
+output/
+Evaluation_Metrics.xlsx
+Evaluation_Metric.xlsx
+*.xlsx
+
+# ─── Docker image artifacts ────────────────────────────────────────────────
+image.tar
+image.tar.gz
+*.tar
+*.tar.gz
+*.zip
+Dataloader/output/
+
+# ─── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+
+# ─── OS / editor ───────────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ─── Local helpers ─────────────────────────────────────────────────────────
+fetch_remaining.sh

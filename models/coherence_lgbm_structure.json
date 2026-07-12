@@ -1,0 +1,28 @@
+{
+  "feature_names": [
+    "lin_ratio",
+    "planar_ratio",
+    "lambda1_frac",
+    "flow_consistency",
+    "speed_norm",
+    "time_spread",
+    "space_spread",
+    "pol_mean",
+    "pol_entropy",
+    "aniso"
+  ],
+  "type": "LGBMClassifier",
+  "n_estimators": 400,
+  "importances": {
+    "lin_ratio": 1601,
+    "planar_ratio": 2611,
+    "lambda1_frac": 1258,
+    "flow_consistency": 2398,
+    "speed_norm": 2533,
+    "time_spread": 3454,
+    "space_spread": 4225,
+    "pol_mean": 2230,
+    "pol_entropy": 2205,
+    "aniso": 2285
+  }
+}

@@ -1,0 +1,197 @@
+"""CenterNet-style event detector — a *fair* localization head for the event
+transformer ablation.
+
+The query/global-regression head (evt_model) trains a good objectness signal but
+cannot localize a ~50 px box from coarse patch features (centers land >65 px
+off).  CenterNet replaces global box regression with a **center heatmap** at
+cell resolution + sub-cell offset + size regression, which localizes far more
+precisely — giving the deep detector a fair shot at IoU>=0.5.
+
+Encoder is the same sparse-masked transformer as EvT-SSA; only the head differs.
+"""
+from __future__ import annotations
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from .evt_model import MaskedSelfAttention, LinearAttention, FFN
+
+
+class EventCenterNet(nn.Module):
+    def __init__(self, grid=128, patch=8, tbins=3, dim=128, heads=4,
+                 enc_layers=3, hm_div=2, variant="evt"):
+        super().__init__()
+        self.grid, self.patch, self.tbins = grid, patch, tbins
+        self.gp = grid // patch                       # token grid side
+        self.hm = grid // hm_div                       # heatmap side
+        C = tbins * 2
+        self.embed = nn.Conv2d(C, dim, patch, stride=patch)
+        self.pos = nn.Parameter(torch.zeros(1, self.gp * self.gp, dim))
+        nn.init.trunc_normal_(self.pos, std=0.02)
+        Attn = LinearAttention if variant == "lina" else MaskedSelfAttention
+        self.enc = nn.ModuleList([nn.ModuleList([Attn(dim, heads), FFN(dim)])
+                                  for _ in range(enc_layers)])
+        # upsample token map (gp x gp) -> heatmap (hm x hm)
+        ups = []
+        ch = dim
+        size = self.gp
+        while size < self.hm:
+            ups += [nn.ConvTranspose2d(ch, ch // 2, 4, 2, 1),
+                    nn.GroupNorm(8, ch // 2), nn.GELU()]
+            ch //= 2
+            size *= 2
+        self.up = nn.Sequential(*ups) if ups else nn.Identity()
+        self.hm_head = nn.Conv2d(ch, 1, 1)
+        self.wh_head = nn.Conv2d(ch, 2, 1)
+        self.off_head = nn.Conv2d(ch, 2, 1)
+        self.hm_head.bias.data.fill_(-2.19)            # focal-loss prior
+
+    def forward(self, vox):
+        B = vox.shape[0]
+        feat = self.embed(vox)
+        tok = feat.flatten(2).transpose(1, 2)
+        with torch.no_grad():
+            occ = F.max_pool2d((vox.abs().sum(1, keepdim=True) > 0).float(),
+                               self.patch).flatten(2).squeeze(1)
+            key_pad = occ <= 0
+            key_pad[(~key_pad).sum(1) == 0, 0] = False
+        x = tok + self.pos
+        for attn, ffn in self.enc:
+            x = ffn(attn(x, key_pad))
+        fmap = x.transpose(1, 2).reshape(B, -1, self.gp, self.gp)
+        u = self.up(fmap)
+        return self.hm_head(u), self.wh_head(u), self.off_head(u)
+
+
+# --------------------------------------------------------------------------- #
+#  Target generation + loss (CenterNet)
+# --------------------------------------------------------------------------- #
+def _gaussian2d(shape, sigma):
+    m, n = [(s - 1) / 2 for s in shape]
+    y, x = np.ogrid[-m:m + 1, -n:n + 1]
+    h = np.exp(-(x * x + y * y) / (2 * sigma * sigma))
+    h[h < np.finfo(h.dtype).eps * h.max()] = 0
+    return h
+
+
+def draw_gaussian(hm, cx, cy, radius):
+    d = 2 * radius + 1
+    g = _gaussian2d((d, d), sigma=d / 6.0)
+    H, W = hm.shape
+    l, r = min(cx, radius), min(W - cx, radius + 1)
+    t, b = min(cy, radius), min(H - cy, radius + 1)
+    if r <= -l or b <= -t:
+        return
+    masked = hm[cy - t:cy + b, cx - l:cx + r]
+    gm = g[radius - t:radius + b, radius - l:radius + r]
+    np.maximum(masked, gm, out=masked)
+
+
+def build_targets(boxes_has, hm_size):
+    """boxes_has: list of (has, cx, cy, w, h) normalized.  Returns batched
+    heatmap, wh, offset, ind(center flat idx), reg_mask."""
+    B = len(boxes_has)
+    hm = np.zeros((B, 1, hm_size, hm_size), np.float32)
+    wh = np.zeros((B, 2), np.float32)
+    off = np.zeros((B, 2), np.float32)
+    ind = np.zeros(B, np.int64)
+    mask = np.zeros(B, np.float32)
+    for i, (has, cx, cy, w, h) in enumerate(boxes_has):
+        if has < 0.5:
+            continue
+        fcx, fcy = cx * hm_size, cy * hm_size
+        icx, icy = int(min(fcx, hm_size - 1)), int(min(fcy, hm_size - 1))
+        radius = max(1, int(0.3 * max(w, h) * hm_size))
+        draw_gaussian(hm[i, 0], icx, icy, radius)
+        wh[i] = (w, h)
+        off[i] = (fcx - icx, fcy - icy)
+        ind[i] = icy * hm_size + icx
+        mask[i] = 1.0
+    return (torch.from_numpy(hm), torch.from_numpy(wh), torch.from_numpy(off),
+            torch.from_numpy(ind), torch.from_numpy(mask))
+
+
+def focal_hm_loss(pred, gt):
+    pred = pred.clamp(1e-4, 1 - 1e-4)
+    pos = gt.eq(1).float()
+    neg = gt.lt(1).float()
+    neg_w = torch.pow(1 - gt, 4)
+    pos_loss = torch.log(pred) * torch.pow(1 - pred, 2) * pos
+    neg_loss = torch.log(1 - pred) * torch.pow(pred, 2) * neg_w * neg
+    npos = pos.sum()
+    if npos == 0:
+        return -neg_loss.sum()
+    return -(pos_loss.sum() + neg_loss.sum()) / npos
+
+
+def _gather(feat, ind):
+    # feat (B,2,H,W) -> (B,2) at flat ind
+    B, C, H, W = feat.shape
+    feat = feat.view(B, C, H * W)
+    ind = ind.view(B, 1, 1).expand(B, C, 1)
+    return feat.gather(2, ind).squeeze(-1)
+
+
+def centernet_loss(hm, wh, off, tgt, w_hm=1.0, w_wh=1.0, w_off=1.0):
+    thm, twh, toff, ind, mask = tgt
+    lhm = focal_hm_loss(torch.sigmoid(hm), thm)
+    m = mask.unsqueeze(1)
+    pwh = _gather(wh, ind)
+    poff = _gather(off, ind)
+    n = mask.sum().clamp_min(1)
+    lwh = (F.l1_loss(pwh * m, twh * m, reduction="sum") / n)
+    loff = (F.l1_loss(poff * m, toff * m, reduction="sum") / n)
+    return w_hm * lhm + w_wh * lwh + w_off * loff, lhm.item()
+
+
+@torch.no_grad()
+def decode_peaks(hm, wh, off, topk=5, kernel=3):
+    """Decode the top-k *local-maxima* heatmap peaks per sample (NMS via
+    max-pool), returning per batch a list of (score, cx, cy, w, h) normalized.
+    Local-maxima NMS prevents one blob from spawning several adjacent peaks —
+    needed when peaks feed a tracker as candidates."""
+    B, _, H, W = hm.shape
+    prob = torch.sigmoid(hm)
+    pad = (kernel - 1) // 2
+    pooled = F.max_pool2d(prob, kernel, stride=1, padding=pad)
+    keep = (pooled == prob).float()
+    prob = (prob * keep).view(B, -1)
+    scores, idx = prob.topk(topk, dim=1)
+    whf = wh.view(B, 2, -1)
+    offf = off.view(B, 2, -1)
+    out = []
+    for b in range(B):
+        dets = []
+        for k in range(topk):
+            i = int(idx[b, k])
+            s = float(scores[b, k])
+            cy, cx = divmod(i, W)
+            ox, oy = float(offf[b, 0, i]), float(offf[b, 1, i])
+            w, h = float(whf[b, 0, i]), float(whf[b, 1, i])
+            dets.append((s, (cx + ox) / W, (cy + oy) / H, w, h))
+        out.append(dets)
+    return out
+
+
+@torch.no_grad()
+def decode(hm, wh, off, topk=1):
+    """Return list per batch of (score, cx, cy, w, h) normalized."""
+    B, _, H, W = hm.shape
+    prob = torch.sigmoid(hm).view(B, -1)
+    scores, idx = prob.topk(topk, dim=1)
+    out = []
+    whf = wh.view(B, 2, -1)
+    offf = off.view(B, 2, -1)
+    for b in range(B):
+        dets = []
+        for k in range(topk):
+            i = int(idx[b, k])
+            cy, cx = divmod(i, W)
+            ox, oy = float(offf[b, 0, i]), float(offf[b, 1, i])
+            w, h = float(whf[b, 0, i]), float(whf[b, 1, i])
+            dets.append((float(scores[b, k]),
+                         (cx + ox) / W, (cy + oy) / H, w, h))
+        out.append(dets)
+    return out

@@ -1,0 +1,60 @@
+{
+  "gt_dir": "OrbitSight_Dataset/Testing_sets",
+  "ranked": [
+    {
+      "dir": "testing_router2",
+      "mAP": 0.3983,
+      "sequences": 4
+    },
+    {
+      "dir": "testing_cnet_aug",
+      "mAP": 0.3797,
+      "sequences": 4
+    },
+    {
+      "dir": "testing_router",
+      "mAP": 0.3152,
+      "sequences": 4
+    },
+    {
+      "dir": "testing_cnet",
+      "mAP": 0.289,
+      "sequences": 4
+    },
+    {
+      "dir": "testing",
+      "mAP": 0.2491,
+      "sequences": 4
+    },
+    {
+      "dir": "testing_cnet_trk",
+      "mAP": 0.165,
+      "sequences": 4
+    },
+    {
+      "dir": "testing_evt2",
+      "mAP": 0.0164,
+      "sequences": 4
+    },
+    {
+      "dir": "testing_pointnet",
+      "mAP": 0.0162,
+      "sequences": 4
+    },
+    {
+      "dir": "testing_evt",
+      "mAP": 0.0076,
+      "sequences": 4
+    },
+    {
+      "dir": "testing_snn",
+      "mAP": 0.0002,
+      "sequences": 4
+    }
+  ],
+  "winner": {
+    "dir": "testing_router2",
+    "mAP": 0.3983,
+    "sequences": 4
+  }
+}

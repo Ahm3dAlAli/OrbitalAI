@@ -1,0 +1,88 @@
+#!/bin/sh
+# OrbitSight deep-model container entrypoint — reproduces the winning pipeline
+# (multi-window temporal-context CenterNet + TTA, per-sensor routed).
+#
+# Non-interactive, offline.  For every *_labeled_events.npy in the mounted
+# dataset it writes a prediction file, then (if GT is present) the frozen
+# evaluator's Evaluation_Metrics.xlsx — all into the team output folder.
+#
+# Mounted paths (challenge spec):
+#   /OrbitSight_dataset      (read-only)  event recordings + GT
+#   /work/teamName/DDMMYYYY  (write)      predictions + scoring sheet
+#
+# Everything below is overridable via env vars (see docker run examples in the
+# Dockerfile header).  Defaults reproduce the 0.675 single-ensemble result on CPU.
+set -e
+export KMP_DUPLICATE_LIB_OK=TRUE PYTHONUNBUFFERED=1
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-0}"
+
+DATASET="${ORBITSIGHT_DATASET:-/OrbitSight_dataset}"
+TEAM="${ORBITSIGHT_TEAM:-OrbitSight}"
+DATESTAMP="${ORBITSIGHT_DATE:-$(date +%d%m%Y)}"
+OUT="${ORBITSIGHT_OUT:-/work/${TEAM}/${DATESTAMP}}"
+DEVICE="${ORBITSIGHT_DEVICE:-cpu}"                 # cpu (portable, real-time) | cuda
+TTA="${ORBITSIGHT_TTA:---tta}"                     # set to "" to disable TTA
+# DAVIS/DVX detectors (temporal ensemble members) — space-separated checkpoints:
+MODELS="${ORBITSIGHT_MODELS:-models/g192_ctx.pt}"
+# Optional distinct EVK4 detector(s) for the per-sensor router (cross-grid).
+# If unset, the DAVIS/DVX models are used for EVK4 too (single-ensemble mode).
+EVK4_MODELS="${ORBITSIGHT_EVK4_MODELS:-}"
+
+mkdir -p "${OUT}"
+echo "[run_infer] dataset=${DATASET} out=${OUT} device=${DEVICE}"
+echo "[run_infer] models=[${MODELS}] evk4=[${EVK4_MODELS:-<same>}] tta=${TTA:-off}"
+
+# Fall back to whatever temporal-ish checkpoint is present if the default is absent.
+first_present() { for m in "$@"; do [ -f "$m" ] && { echo "$m"; return; }; done; }
+if [ -z "$(first_present $MODELS)" ]; then
+    ALT="$(first_present models/g192_ctx.pt models/evt_centernet_aug.pt models/evt_centernet.pt)"
+    [ -n "$ALT" ] && MODELS="$ALT" && echo "[run_infer] default model missing; using ${MODELS}"
+fi
+
+# List the sequence base-names of one split whose sensor matches $1 (grep token).
+seqs_for () { # $1 = split dir, $2 = sensor token (EVK4|DAVIS|DVX) or "" for all
+    for p in "$1"/*_labeled_events.npy; do
+        [ -e "$p" ] || continue
+        b="$(basename "$p")"; b="${b%_labeled_events.npy}"
+        if [ -z "$2" ] || echo "$b" | grep -qi "$2"; then echo "$b"; fi
+    done
+}
+
+infer_split () {
+    src="$1"
+    ls "$src"/*_labeled_events.npy >/dev/null 2>&1 || return 0
+    echo "[run_infer] inferring split: $src"
+    if [ -n "$EVK4_MODELS" ]; then
+        # Per-sensor router: EVK4 -> cross-grid, DAVIS/DVX -> temporal ensemble.
+        NON_EVK4="$(seqs_for "$src" DAVIS) $(seqs_for "$src" DVX)"
+        EVK4_SEQS="$(seqs_for "$src" EVK4)"
+        tmp_main="${OUT}/.main"; tmp_evk4="${OUT}/.evk4"
+        [ -n "$(echo $NON_EVK4)" ] && python3 scripts/infer_ensemble.py \
+            --device "$DEVICE" $TTA --data-dir "$src" --out-dir "$tmp_main" \
+            --models $MODELS --sequences $NON_EVK4
+        [ -n "$(echo $EVK4_SEQS)" ] && python3 scripts/infer_ensemble.py \
+            --device "$DEVICE" $TTA --data-dir "$src" --out-dir "$tmp_evk4" \
+            --models $EVK4_MODELS --sequences $EVK4_SEQS
+        python3 scripts/route.py --out-dir "$OUT" \
+            --map EVK4="$tmp_evk4" DAVIS="$tmp_main" DVX="$tmp_main"
+        rm -rf "$tmp_main" "$tmp_evk4"
+    else
+        # Single-ensemble mode: one detector set over every sequence.
+        python3 scripts/infer_ensemble.py --device "$DEVICE" $TTA \
+            --data-dir "$src" --out-dir "$OUT" --models $MODELS
+    fi
+}
+
+if [ -d "${DATASET}/Testing_sets" ] || [ -d "${DATASET}/Training_sets" ]; then
+    infer_split "${DATASET}/Training_sets"
+    infer_split "${DATASET}/Testing_sets"
+else
+    infer_split "${DATASET}"                       # flat layout
+fi
+
+echo "[run_infer] generating Evaluation_Metrics.xlsx"
+python3 scripts/evaluate_wrapper.py --dataset "${DATASET}" \
+    --pred-dir "${OUT}" --excel-out "${OUT}/Evaluation_Metrics.xlsx" || \
+    echo "[run_infer] (evaluation skipped — GT not available)"
+
+echo "[run_infer] done -> ${OUT}"

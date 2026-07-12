@@ -1,0 +1,60 @@
+{
+  "model": "models/evt_centernet_aug.pt",
+  "device": "cpu",
+  "gpu": "CPU",
+  "batch": 1,
+  "rows": [
+    {
+      "sensor": "EVK4",
+      "grid": 128,
+      "context": 0,
+      "windows": 400,
+      "events": 5239219,
+      "vox_ms": 0.5989060548017733,
+      "fwd_ms": 4.154678492923267,
+      "dec_ms": 0.04917284328257665,
+      "total_ms": 4.802757391007617,
+      "throughput_win_s": 208.21372361475878,
+      "sequence": "2025_12_23_20_53_46_EVK4_mag7.3"
+    },
+    {
+      "sensor": "DAVIS",
+      "grid": 128,
+      "context": 0,
+      "windows": 400,
+      "events": 11924167,
+      "vox_ms": 0.30875864264089614,
+      "fwd_ms": 4.294636286213063,
+      "dec_ms": 0.049467798380646855,
+      "total_ms": 4.652862727234606,
+      "throughput_win_s": 214.92144914284685,
+      "sequence": "DAVIS_SAOCOM1B_46265_2024-12-04-18-21-37"
+    },
+    {
+      "sensor": "DVX",
+      "grid": 128,
+      "context": 0,
+      "windows": 400,
+      "events": 12257869,
+      "vox_ms": 0.2554435221827589,
+      "fwd_ms": 3.9091840604669414,
+      "dec_ms": 0.045693767024204135,
+      "total_ms": 4.2103213496739045,
+      "throughput_win_s": 237.51156193278487,
+      "sequence": "DVX_Filtered_Stars3_2025-01-20-20-22-53"
+    },
+    {
+      "sensor": "DVX",
+      "grid": 128,
+      "context": 0,
+      "windows": 400,
+      "events": 2759713,
+      "vox_ms": 0.250347992987372,
+      "fwd_ms": 3.887923327565659,
+      "dec_ms": 0.0415529336896725,
+      "total_ms": 4.179824254242703,
+      "throughput_win_s": 239.24450866204637,
+      "sequence": "DVX_Filtered_Thuraya3_32404_2025-01-20-20-02-43"
+    }
+  ]
+}

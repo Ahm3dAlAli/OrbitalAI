@@ -1,0 +1,37 @@
+{
+  "_comment": "Canonical MEASURED results for OrbitSight (frozen evaluate.py on the held-out test set, and benchmark_latency.py). Single source of truth: scripts/make_figures.py reads this file. Update it when a new run lands, then re-run scripts/build_all.sh.",
+  "best_config": "per-sensor router: EVK4 -> cross-grid ensemble; DAVIS/DVX -> temporal-context CenterNet + TTA",
+  "overall": {
+    "mAP": 0.675, "precision": 0.575, "recall": 0.761, "f1": 0.655,
+    "tp": 5385, "fp": 3976, "fn": 1691
+  },
+  "per_sequence": [
+    ["EVK4\nmag7.3",   0.896, "EVK4"],
+    ["DAVIS\nSAOCOM1B", 0.729, "DAVIS"],
+    ["DVX\nStars3",    0.545, "DVX"],
+    ["DVX\nThuraya3",  0.469, "DVX"]
+  ],
+  "roadmap": [
+    ["Broken\nglobal-reg", 0.016],
+    ["Classical\npipeline", 0.249],
+    ["CenterNet\nheatmap", 0.289],
+    ["Per-sensor\nrouter", 0.315],
+    ["Event\naugment", 0.398],
+    ["Grid-192\n+box calib", 0.454],
+    ["Ensemble\n+stack", 0.554],
+    ["Temporal\ncontext", 0.660],
+    ["+ TTA", 0.675]
+  ],
+  "ensemble_projected": 0.70,
+  "temporal_gain": [
+    ["DVX Thuraya3", 0.233, 0.469],
+    ["DAVIS SAOCOM1B", 0.617, 0.729]
+  ],
+  "latency_ms": [
+    ["EVK4\n1280x720", 1.34, 13.89, 0.19],
+    ["DAVIS\n346x260", 0.72, 16.46, 0.21],
+    ["DVX\n640x480",   0.51, 13.79, 0.16]
+  ],
+  "budget_ms": 40.0,
+  "latency_note": "grid-128 CenterNet, laptop CPU, streaming (batch=1). Re-measure the deployed g192_ctx model on GPU with scripts/benchmark_latency.py."
+}
