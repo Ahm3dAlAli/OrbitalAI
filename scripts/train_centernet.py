@@ -24,11 +24,11 @@ import time
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from orbitsight.config import DEFAULT_CONFIG, TRAIN_SEQUENCES
+from orbitsight.config import DEFAULT_CONFIG, TRAIN_SEQUENCES, sensor_for_sequence
 from orbitsight.evt_centernet import EventCenterNet, build_targets, centernet_loss
 from scripts.train_transformer import WindowSet
 
@@ -94,6 +94,16 @@ def main():
     ap.add_argument("--context", type=int, default=0,
                     help="+/- windows of temporal context (0=single window). "
                          "Set --tbins to span it, e.g. --context 3 --tbins 7")
+    # --- DVX-focused reweighting (multi-object / dim-object specialization) ---
+    ap.add_argument("--dvx-weight", type=float, default=1.0,
+                    help="oversample DVX windows by this factor (e.g. 3.0)")
+    ap.add_argument("--evk4-weight", type=float, default=1.0,
+                    help="down/upweight EVK4 windows (e.g. 0.5 so the bright, "
+                         "dense sequence doesn't dominate)")
+    ap.add_argument("--davis-weight", type=float, default=1.0)
+    ap.add_argument("--dim-weight", type=float, default=0.0,
+                    help="exponent for inverse-event-count weighting; sparse/dim "
+                         "windows are sampled more (0=off, 0.5=moderate, 1=strong)")
     args = ap.parse_args()
 
     device = (("cuda" if torch.cuda.is_available() else "cpu")
@@ -115,8 +125,26 @@ def main():
                        _events=full.events, _sensors=full.sensors)
     print(f"[data] train={len(train_ds)} val={len(val_ds)}  aug={'ON' if args.augment else 'off'}")
     pin = device == "cuda"
-    dl = DataLoader(train_ds, batch_size=args.batch, shuffle=True,
-                    num_workers=args.workers, drop_last=True, pin_memory=pin)
+    reweight = (args.dvx_weight != 1.0 or args.evk4_weight != 1.0
+                or args.davis_weight != 1.0 or args.dim_weight > 0)
+    if reweight:
+        sw = {"DVX": args.dvx_weight, "EVK4": args.evk4_weight, "DAVIS": args.davis_weight}
+        weights = []
+        for it in tr_items:
+            w = sw.get(sensor_for_sequence(it[0]).name, 1.0)
+            if args.dim_weight > 0:                     # sparse windows -> higher weight
+                n_ev = max(int(it[2]) - int(it[1]), 1)
+                w *= (1000.0 / n_ev) ** args.dim_weight
+            weights.append(max(w, 1e-6))
+        sampler = WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
+        dl = DataLoader(train_ds, batch_size=args.batch, sampler=sampler,
+                        num_workers=args.workers, drop_last=True, pin_memory=pin)
+        print(f"[reweight] DVX×{args.dvx_weight} EVK4×{args.evk4_weight} "
+              f"DAVIS×{args.davis_weight} dim^{args.dim_weight}  "
+              f"(effective sampling; expected DVX share up ~{args.dvx_weight:.1f}x)")
+    else:
+        dl = DataLoader(train_ds, batch_size=args.batch, shuffle=True,
+                        num_workers=args.workers, drop_last=True, pin_memory=pin)
     vdl = DataLoader(val_ds, batch_size=args.batch, shuffle=False,
                      num_workers=args.workers, pin_memory=pin)
 
@@ -132,7 +160,9 @@ def main():
     best_val = float("inf"); best_state = None; bad = 0
     cfg_blob = {"grid": args.grid, "patch": args.patch, "tbins": args.tbins,
                 "dim": args.dim, "hm_div": args.hm_div, "variant": args.variant,
-                "enc_layers": args.enc_layers, "context": args.context}
+                "enc_layers": args.enc_layers, "context": args.context,
+                "reweight": {"dvx": args.dvx_weight, "evk4": args.evk4_weight,
+                             "davis": args.davis_weight, "dim": args.dim_weight}}
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
 
     for ep in range(args.epochs):
