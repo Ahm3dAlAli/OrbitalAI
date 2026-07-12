@@ -29,6 +29,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from orbitsight.config import DEFAULT_CONFIG, TRAIN_SEQUENCES, sensor_for_sequence
+from orbitsight.augment import AugCfg
 from orbitsight.evt_centernet import EventCenterNet, build_targets, centernet_loss
 from scripts.train_transformer import WindowSet
 
@@ -104,6 +105,10 @@ def main():
     ap.add_argument("--dim-weight", type=float, default=0.0,
                     help="exponent for inverse-event-count weighting; sparse/dim "
                          "windows are sampled more (0=off, 0.5=moderate, 1=strong)")
+    ap.add_argument("--dim-aug", action="store_true",
+                    help="aggressive dim-object augmentation: event-drop down to "
+                         "~10%% of events (vs 30%%) so the model trains on 2-5 event "
+                         "objects like Stars3/Thuraya3. Pair with --augment.")
     args = ap.parse_args()
 
     device = (("cuda" if torch.cuda.is_available() else "cpu")
@@ -117,9 +122,12 @@ def main():
     full = WindowSet(args.data_dir, TRAIN_SEQUENCES, DEFAULT_CONFIG,
                      args.grid, args.tbins)
     tr_items, va_items = _split_items(full.items, args.val_frac, seed)
+    # aggressive dim-object augmentation: drop to as low as 10% of events (default
+    # 30%), applied more often, to synthesize the 2-5 event/window dim regime.
+    dim_cfg = AugCfg(drop_p=0.85, drop_min=0.10, noise=0.5) if args.dim_aug else None
     train_ds = WindowSet(None, None, DEFAULT_CONFIG, args.grid, args.tbins,
                          augment=args.augment, context=args.context, _items=tr_items,
-                         _events=full.events, _sensors=full.sensors)
+                         _events=full.events, _sensors=full.sensors, aug_cfg=dim_cfg)
     val_ds = WindowSet(None, None, DEFAULT_CONFIG, args.grid, args.tbins,
                        augment=False, context=args.context, _items=va_items,
                        _events=full.events, _sensors=full.sensors)
@@ -162,7 +170,11 @@ def main():
                 "dim": args.dim, "hm_div": args.hm_div, "variant": args.variant,
                 "enc_layers": args.enc_layers, "context": args.context,
                 "reweight": {"dvx": args.dvx_weight, "evk4": args.evk4_weight,
-                             "davis": args.davis_weight, "dim": args.dim_weight}}
+                             "davis": args.davis_weight, "dim": args.dim_weight,
+                             "dim_aug": bool(args.dim_aug)}}
+    if args.dim_aug:
+        print("[dim-aug] aggressive event-drop (keep 10-100%), noise 0.5 — "
+              "synthesizing the 2-5 event dim regime")
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
 
     for ep in range(args.epochs):

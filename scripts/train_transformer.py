@@ -36,9 +36,10 @@ from orbitsight.augment import augment as augment_events
 class WindowSet(Dataset):
     def __init__(self, data_dir, sequences, cfg, grid, tbins,
                  neg_per_pos=1.5, seed=0, augment=False, context=0,
-                 _items=None, _events=None, _sensors=None):
+                 _items=None, _events=None, _sensors=None, aug_cfg=None):
         self.grid, self.tbins, self.cfg = grid, tbins, cfg
         self.augment = augment
+        self.aug_cfg = aug_cfg          # None -> default AugCfg; else an override
         self.context = context          # +/- windows of temporal context
         self._rng = np.random.default_rng(seed + 7)
         # Shared-split constructor: reuse another set's loaded events + a
@@ -101,7 +102,11 @@ class WindowSet(Dataset):
         pol = ev.pol[lo:hi]
         t = ev.t[lo:hi]
         if self.augment:
-            xn, yn, pol, t, box = augment_events(xn, yn, pol, t, box, ws, we, self._rng)
+            if self.aug_cfg is not None:
+                xn, yn, pol, t, box = augment_events(xn, yn, pol, t, box, ws, we,
+                                                     self._rng, self.aug_cfg)
+            else:
+                xn, yn, pol, t, box = augment_events(xn, yn, pol, t, box, ws, we, self._rng)
         vox = voxelize(xn, yn, pol, t, ws, we, 1.0, 1.0, self.grid, self.tbins)
         has = box is not None
         b = np.array(box if has else (0, 0, 0, 0), dtype=np.float32)
