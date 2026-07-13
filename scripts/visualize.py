@@ -181,6 +181,62 @@ def render_xyt(ev, seq, out, max_pts=40000):
     print(f"[viz] (x,y,t) plot -> {out}")
 
 
+def render_diagnostics(ev, seq, wins, pred, gt, out, W, H):
+    """Analyst diagnostics panel (criterion #4): event-rate spatial heatmap,
+    event rate over time (SNR proxy), detection confidence over time, and
+    confidence/matched-IoU distributions."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, axs = plt.subplots(2, 2, figsize=(12, 8.5))
+    fig.suptitle(f"OrbitSight diagnostics — {seq}", fontweight="bold", color="#0d1b2a")
+
+    # 1) event-rate spatial heatmap (log) — where activity concentrates
+    ax = axs[0, 0]
+    bx, by = max(W // 4, 64), max(H // 4, 64)
+    h2, _, _ = np.histogram2d(ev.y, ev.x, bins=[by, bx], range=[[0, H], [0, W]])
+    im = ax.imshow(np.log1p(h2), cmap="inferno", aspect="auto", origin="upper")
+    ax.set_title("Event-rate spatial heatmap (log)")
+    ax.set_xlabel("x (binned)"); ax.set_ylabel("y (binned)")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    # 2) event rate over time — activity / SNR proxy per 40 ms window
+    ax = axs[0, 1]
+    t = np.array([w.start_us / 1e6 for w in wins])
+    cnt = np.array([w.hi - w.lo for w in wins], dtype=float)
+    ax.plot(t, cnt + 1, lw=0.6, color="#1b6ca8")
+    ax.set_yscale("log"); ax.set_title("Event rate over time")
+    ax.set_xlabel("time (s)"); ax.set_ylabel("events / 40 ms window"); ax.grid(alpha=0.25)
+
+    # 3) detection confidence over time — track continuity / dropouts
+    ax = axs[1, 0]
+    if pred:
+        pw = sorted(pred.keys())
+        ax.scatter([w / 1e6 for w in pw], [pred[w][4] for w in pw],
+                   s=4, color="#f4a261", alpha=0.6)
+    ax.set_ylim(0, 1); ax.set_title("Detection confidence over time")
+    ax.set_xlabel("time (s)"); ax.set_ylabel("confidence"); ax.grid(alpha=0.25)
+
+    # 4) confidence + matched-IoU distributions — calibration & localization
+    ax = axs[1, 1]
+    if pred:
+        ax.hist([v[4] for v in pred.values()], bins=30, color="#2ec4b6",
+                alpha=0.75, label="confidence")
+    if pred and gt:
+        ious = [iou(pred[ws][:4], gt[ws][:4]) for ws in pred if ws in gt]
+        if ious:
+            ax.hist(ious, bins=30, color="#e63946", alpha=0.45, label="IoU (matched)")
+            ax.axvline(0.5, color="#e63946", ls="--", lw=1, label="IoU 0.5")
+    ax.set_title("Confidence / IoU distributions")
+    ax.set_xlabel("value"); ax.set_ylabel("count"); ax.legend(fontsize=8)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
+    os.makedirs(os.path.dirname(os.path.abspath(out)) or ".", exist_ok=True)
+    fig.savefig(out, dpi=120); plt.close(fig)
+    print(f"[viz] diagnostics panel -> {out}")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", required=True)
@@ -198,6 +254,8 @@ def main():
                     help="with --gallery: montage of the BEST windows (high IoU)")
     ap.add_argument("--gallery-n", type=int, default=12)
     ap.add_argument("--xyt", action="store_true", help="also write the (x,y,t) H1 plot")
+    ap.add_argument("--diagnostics", action="store_true",
+                    help="analyst panel: event-rate heatmap + rate/confidence/IoU over time")
     args = ap.parse_args()
 
     if not _HAS_PIL:
@@ -213,6 +271,10 @@ def main():
     gt = read_boxes(os.path.join(args.gt_dir, args.seq + D.GT_SUFFIX)) if args.gt_dir else {}
     print(f"[INFO] {args.seq}  {sn.name} {W}x{H}  windows={len(wins)} "
           f"pred={len(pred)} gt={len(gt)}")
+
+    if args.diagnostics:
+        render_diagnostics(ev, args.seq, wins, pred, gt, args.out, W, H)
+        return
 
     if args.xyt:
         render_xyt(ev, args.seq, args.out if args.out.endswith(".html")

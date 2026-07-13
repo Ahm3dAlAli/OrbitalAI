@@ -322,7 +322,11 @@ remaining gap to detection and recall rather than box size.
 
 **Figure 5** overlays predicted (yellow, with confidence) and ground-truth (green)
 boxes across sensors, from the bright EVK4 object to the faint DVX/Thuraya3 target,
-with IoU in the 0.83–1.00 range.
+with IoU in the 0.83–1.00 range. Our model-agnostic visualization tool additionally
+renders per-window detection animations, a failure gallery (missed / false-positive /
+low-IoU windows), an (x, y, t) coherence view, and an **analyst diagnostics panel**
+(event-rate spatial heatmap, per-window event rate as an SNR proxy, and
+confidence/matched-IoU distributions over time) for operational interpretation.
 
 ### 5.7 Latency: real-time vs. offline, measured
 
@@ -373,10 +377,26 @@ signal/training-domain gap rather than a model or tuning deficiency; closing it 
 requires additional faint-object training data or sensor fusion with the DAVIS APS
 grayscale channel [Capogrosso et al. 2026], both future work. The offline
 max-accuracy configuration (0.689) exceeds the latency budget and is reported
-separately from the deployed real-time system (0.668). Finally, the
-one-box-per-window assumption is exploited by the tracker and is relaxed only for the
-Stars3 field via the grid-256 multi-object head; general multi-object scenes would
-need revisiting.
+separately from the deployed real-time system (0.668).
+
+**Two engineering directions strengthen the roadmap without changing the core
+method.** (i) *Probabilistic sub-pixel tracking.* Our tracker uses a constant-velocity
+gate; an **unscented Kalman filter (UKF)** over event-derived measurements would give
+sub-pixel localization and velocity estimates, smooth trajectories, and bridge missed
+detections in noise [Kalman 1960; Felsen 2022] — the state-estimation approach favored
+in event-based space-domain awareness. Because AP@0.5 is sensitive to box placement,
+principled sub-pixel centers are a plausible source of further gain on the data-rich
+sensors (though not on the non-smoothly-moving Thuraya3 target). (ii) *Deployment
+quantization.* The deployed pipeline is already CPU real-time in float32;
+**INT8/FP16 quantization via ONNX Runtime / OpenVINO** (with quantization-aware
+training) would roughly halve the forward-pass cost, leaving headroom to promote more
+sensors to the grid-256 head or add temporal context on the cheaper sensors while
+staying inside the 40 ms budget. Both are integration-level extensions of the shipped
+system, not new research.
+
+Finally, the one-box-per-window assumption is exploited by the tracker and is relaxed
+only for the Stars3 field via the grid-256 multi-object head; general multi-object
+scenes would need revisiting.
 
 ---
 
