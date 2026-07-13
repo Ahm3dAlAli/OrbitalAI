@@ -113,13 +113,26 @@ def build_targets(boxes_has, hm_size):
             torch.from_numpy(ind), torch.from_numpy(mask))
 
 
-def focal_hm_loss(pred, gt):
+def focal_hm_loss(pred, gt, hard_neg_w=0.0, hard_neg_frac=0.1):
     pred = pred.clamp(1e-4, 1 - 1e-4)
     pos = gt.eq(1).float()
     neg = gt.lt(1).float()
     neg_w = torch.pow(1 - gt, 4)
     pos_loss = torch.log(pred) * torch.pow(1 - pred, 2) * pos
     neg_loss = torch.log(1 - pred) * torch.pow(pred, 2) * neg_w * neg
+    if hard_neg_w > 0:
+        # Online hard-negative mining: upweight the highest-confidence STRICT
+        # background cells (gt < 0.01). This targets exactly the false positives
+        # the model is currently confident about (e.g. Stars3 background stars).
+        # Because we use strict background, the Gaussian skirt (0 < gt < 1) around
+        # real objects is excluded -> we never penalize near-misses / real signal.
+        B = pred.shape[0]
+        bg = gt.lt(0.01).float()
+        flat = (pred * bg).reshape(B, -1)
+        k = max(int(hard_neg_frac * flat.shape[1]), 1)
+        thr = flat.topk(k, dim=1).values[:, -1].reshape(B, *([1] * (pred.dim() - 1)))
+        hard = ((pred >= thr) & bg.bool()).float()
+        neg_loss = neg_loss * (1.0 + hard_neg_w * hard)
     npos = pos.sum()
     if npos == 0:
         return -neg_loss.sum()
@@ -134,9 +147,9 @@ def _gather(feat, ind):
     return feat.gather(2, ind).squeeze(-1)
 
 
-def centernet_loss(hm, wh, off, tgt, w_hm=1.0, w_wh=1.0, w_off=1.0):
+def centernet_loss(hm, wh, off, tgt, w_hm=1.0, w_wh=1.0, w_off=1.0, hard_neg_w=0.0):
     thm, twh, toff, ind, mask = tgt
-    lhm = focal_hm_loss(torch.sigmoid(hm), thm)
+    lhm = focal_hm_loss(torch.sigmoid(hm), thm, hard_neg_w=hard_neg_w)
     m = mask.unsqueeze(1)
     pwh = _gather(wh, ind)
     poff = _gather(off, ind)

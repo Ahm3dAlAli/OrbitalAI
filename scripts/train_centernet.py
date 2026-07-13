@@ -47,7 +47,7 @@ def _split_items(items, val_frac, seed):
     return train, val
 
 
-def _run_epoch(model, dl, hm_size, device, opt=None):
+def _run_epoch(model, dl, hm_size, device, opt=None, hard_neg=0.0):
     train = opt is not None
     model.train(train)
     tot = lh = 0.0; nb = 0
@@ -60,7 +60,9 @@ def _run_epoch(model, dl, hm_size, device, opt=None):
             if train:
                 opt.zero_grad()
             hm, wh, off = model(vox)
-            loss, l_hm = centernet_loss(hm, wh, off, tgt)
+            # hard-negative mining only during training (clean val loss)
+            loss, l_hm = centernet_loss(hm, wh, off, tgt,
+                                        hard_neg_w=hard_neg if train else 0.0)
             if train:
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -109,6 +111,11 @@ def main():
                     help="aggressive dim-object augmentation: event-drop down to "
                          "~10%% of events (vs 30%%) so the model trains on 2-5 event "
                          "objects like Stars3/Thuraya3. Pair with --augment.")
+    ap.add_argument("--hard-neg", type=float, default=0.0,
+                    help="online hard-negative mining weight: upweight the focal loss "
+                         "on high-confidence STRICT-background cells (suppresses FPs "
+                         "like Stars3 background stars). Try 1.5-2.0; 0=off. Pair with "
+                         "--dvx-weight so the mining targets the noisy DVX field.")
     args = ap.parse_args()
 
     device = (("cuda" if torch.cuda.is_available() else "cpu")
@@ -171,7 +178,10 @@ def main():
                 "enc_layers": args.enc_layers, "context": args.context,
                 "reweight": {"dvx": args.dvx_weight, "evk4": args.evk4_weight,
                              "davis": args.davis_weight, "dim": args.dim_weight,
-                             "dim_aug": bool(args.dim_aug)}}
+                             "dim_aug": bool(args.dim_aug), "hard_neg": args.hard_neg}}
+    if args.hard_neg > 0:
+        print(f"[hard-neg] online mining, focal upweight ×{args.hard_neg} on "
+              "high-confidence strict-background cells")
     if args.dim_aug:
         print("[dim-aug] aggressive event-drop (keep 10-100%), noise 0.5 — "
               "synthesizing the 2-5 event dim regime")
@@ -179,7 +189,7 @@ def main():
 
     for ep in range(args.epochs):
         t0 = time.perf_counter()
-        tr_loss, tr_hm = _run_epoch(model, dl, hm_size, device, opt)
+        tr_loss, tr_hm = _run_epoch(model, dl, hm_size, device, opt, hard_neg=args.hard_neg)
         va_loss, va_hm = _run_epoch(model, vdl, hm_size, device, opt=None)
         sched.step()
         improved = va_loss < best_val - 1e-4
