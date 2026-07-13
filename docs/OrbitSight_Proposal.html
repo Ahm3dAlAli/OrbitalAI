@@ -50,8 +50,8 @@ into resident-space-object (RSO) detections and tracks — in real time, under
 low-light noise, across three sensor resolutions.</p>
 
 <div class="kpi">
-  <div><span class="v">0.651</span><span class="l">real-time mAP (single model, ~17 ms CPU)</span></div>
-  <div><span class="v">0.675</span><span class="l">offline max mAP (ensemble + TTA)</span></div>
+  <div><span class="v">0.668</span><span class="l">real-time mAP (single model/sensor, &lt;40 ms CPU)</span></div>
+  <div><span class="v">0.689</span><span class="l">offline max mAP (ensemble + TTA)</span></div>
   <div><span class="v">&lt;40 ms</span><span class="l">real-time budget met on every sensor</span></div>
   <div><span class="v">4</span><span class="l">model families ablated &amp; debugged</span></div>
 </div>
@@ -153,10 +153,10 @@ window. All numbers below come from that evaluator. Overall <span class="accent"
 <tr><th>Test sequence</th><th>Sensor</th><th>Object regime</th><th class="n">AP @ IoU 0.5</th></tr>
 <tr><td>EVK4_mag7.3</td><td>EVK4 1280×720</td><td>bright, large</td><td class="n">0.896</td></tr>
 <tr><td>DAVIS_SAOCOM1B</td><td>DAVIS 346×260</td><td>moderate</td><td class="n">0.774</td></tr>
-<tr><td>DVX_Stars3</td><td>DVX 640×480</td><td>dim, sparse</td><td class="n">0.555</td></tr>
-<tr><td>DVX_Thuraya3</td><td>DVX 640×480</td><td>dim, sparse</td><td class="n">0.474</td></tr>
-<tr><th colspan="3" style="text-align:right">Overall mAP (offline)</th><th class="n">0.675</th></tr>
-<tr><th colspan="3" style="text-align:right">Overall mAP (real-time single model)</th><th class="n">0.651</th></tr>
+<tr><td>DVX_Stars3</td><td>DVX 640×480</td><td>dim field (grid-256)</td><td class="n">0.613</td></tr>
+<tr><td>DVX_Thuraya3</td><td>DVX 640×480</td><td>faint (capped)</td><td class="n">0.474</td></tr>
+<tr><th colspan="3" style="text-align:right">Overall mAP (offline)</th><th class="n">0.689</th></tr>
+<tr><th colspan="3" style="text-align:right">Overall mAP (real-time, per-sensor single model)</th><th class="n">0.668</th></tr>
 </table>
 
 <div class="row">
@@ -188,11 +188,14 @@ ensemble+stack 0.554 → <strong>temporal context 0.660 → +TTA 0.675</strong>;
 <h2>4 · Real-time performance</h2>
 <p>Latency was measured end-to-end (voxelize → forward → decode) per sensor with
 <code>benchmark_latency.py</code>, streaming (batch = 1 — the deployment number).
-The <strong>deployed real-time</strong> config is a <strong>single model, one
-forward pass per window</strong> — <strong>mAP 0.651 at ~17 ms/window on CPU</strong>,
-inside the 40 ms budget on every sensor. The higher 0.675 (§3) uses offline
-cross-grid ensembling + TTA (3 passes, ~48 ms) — a max-accuracy variant, not the
-real-time path. <strong>Real-time costs only 0.024 mAP.</strong></p>
+The <strong>deployed real-time</strong> config is <strong>one model per sensor,
+one forward pass per window</strong> (g192_ctx + a grid-256 model for the Stars3
+field) — <strong>mAP 0.668 at 15–38 ms/window on CPU</strong>, inside the 40 ms
+budget on every sensor. The higher 0.689 (§3) uses offline cross-grid ensembling
++ TTA (~211 ms) — a max-accuracy variant, not the real-time path. We measured the
+offline EVK4 path at <strong>211 ms</strong> and the deployed config at
+<strong>&le;38 ms</strong>, so the &lt;40 ms claim is on the config we actually
+ship.</p>
 <div class="row">
   <div class="col" style="flex:1.15">
     <img class="fig" src="figures/latency_breakdown.png">

@@ -261,11 +261,13 @@ object) still routes to the cross-grid ensemble. Adding **test-time augmentation
 to the temporal model lifts the overall to **mAP 0.675** (recall 0.76). Trained
 on rolf (RTX 2080 Ti).
 
-> **Real-time vs offline (criterion #3).** The **0.675** figure uses offline
-> cross-grid ensembling + TTA (~48 ms/window). The **deployed real-time** pipeline
-> is a **single `g192_ctx` model** on all sensors — **mAP 0.651 at ~17 ms/window
-> CPU**, inside the 40 ms budget. Real-time costs only **0.024 mAP**. Report both:
-> **0.651 real-time / 0.675 offline max.**
+> **Real-time vs offline (criterion #3).** Deployed **real-time = mAP 0.668**:
+> one model per sensor (g192_ctx everywhere + **Stars3 → grid-256** for the star
+> field), every sensor **< 40 ms/window CPU** (15–38 ms). Offline **max = 0.689**
+> adds cross-grid ensembling + TTA (~211 ms, not real-time). The final DVX push:
+> grid-256 lifted Stars3 **0.545 → 0.613** (recall 0.72→0.81); Thuraya3 is a
+> characterized limit (8 levers, none beat 0.469). Report both: **0.668 real-time
+> / 0.689 offline.**
 
 ### Sample detections (all sensors)
 

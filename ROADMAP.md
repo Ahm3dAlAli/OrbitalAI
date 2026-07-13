@@ -1,8 +1,10 @@
 # OrbitSight — Roadmap: Building the Most Accurate Real-Time RSO Detector
 
-*How we went from a 0.069 baseline to a **0.651 real-time** (single model, ~17 ms
-CPU) / **0.675 offline** mAP event-native detector, and the ablations that justify
-every design choice. Real-time costs only 0.024 mAP over the offline maximum.*
+*How we went from a 0.069 baseline to a **0.668 real-time** (single model per
+sensor, all < 40 ms CPU) / **0.689 offline** mAP event-native detector, and the
+ablations that justify every design choice. The final DVX push: a grid-256 model
+lifts the Stars3 star-field (0.545 → 0.613); Thuraya3 is a characterized limit
+(8 levers tried, none beat 0.469).*
 
 This document is the engineering narrative behind the numbers. It maps directly
 onto the four technical scoring criteria: **AI approach & ablation**, **detection
@@ -202,10 +204,11 @@ Example animations + failure galleries are generated under `docs/vis/`.
 
 | Item | Status |
 |------|--------|
-| **Real-time** accuracy (deployed) | **mAP 0.651** — single g192_ctx model, ~17 ms/window CPU |
-| **Offline** max accuracy | **mAP 0.675** — router + cross-grid + TTA (~48 ms, not real-time) |
-| Latency < 40 ms | ✅ measured for the deployed single model (0.651) |
-| DVX ceiling probe | 5 post-hoc levers tried; ≤ +0.004 — DVX near detection ceiling |
+| **Real-time** accuracy (deployed) | **mAP 0.668** — single model/sensor (g192_ctx + Stars3→g256), all <40 ms CPU |
+| **Offline** max accuracy | **mAP 0.689** — router + cross-grid + TTA (~211 ms, not real-time) |
+| Latency < 40 ms | ✅ measured; deployed config 15–38 ms/window per sensor |
+| Stars3 (multi-object) | ✅ grid-256 lifted 0.545 → **0.613** (recall 0.72→0.81) |
+| Thuraya3 (faint) | characterized limit: 8 levers (aug, dim-aug, reweight, g256, ctx5, stack, traj, topk), none beat 0.469 |
 | Visualization tool | ✅ `scripts/visualize.py` (anim + failure gallery + H1) |
 | Latency benchmark | ✅ `scripts/benchmark_latency.py` |
 | Docker image (deliverable) | ✅ `Dockerfile` + `run_infer.sh` — reproducible CPU inference, validated end-to-end |
