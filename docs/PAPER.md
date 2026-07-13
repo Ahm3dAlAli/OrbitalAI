@@ -379,15 +379,18 @@ grayscale channel [Capogrosso et al. 2026], both future work. The offline
 max-accuracy configuration (0.689) exceeds the latency budget and is reported
 separately from the deployed real-time system (0.668).
 
-**Two engineering directions strengthen the roadmap without changing the core
-method.** (i) *Probabilistic sub-pixel tracking.* Our tracker uses a constant-velocity
-gate; an **unscented Kalman filter (UKF)** over event-derived measurements would give
-sub-pixel localization and velocity estimates, smooth trajectories, and bridge missed
-detections in noise [Kalman 1960; Felsen 2022] — the state-estimation approach favored
-in event-based space-domain awareness. Because AP@0.5 is sensitive to box placement,
-principled sub-pixel centers are a plausible source of further gain on the data-rich
-sensors (though not on the non-smoothly-moving Thuraya3 target). (ii) *Deployment
-quantization.* The deployed pipeline is already CPU real-time in float32;
+**One tested negative result and one deployment direction.** (i) *Probabilistic
+sub-pixel tracking — tested, does not help.* We implemented a constant-velocity
+Kalman filter with a Rauch–Tung–Striebel smoother over detection centers [Kalman
+1960; Felsen 2022] and re-scored. It **slightly degrades AP on every sensor**
+(−0.012 overall) because the CenterNet's learned sub-cell offset already tracks the
+object to within ~1 px (median measurement-to-smoothed residual 0.8–1.2 px) — closer
+than a constant-velocity prior, which can only pull well-placed centers off. This is
+a useful bound: the localization head, not the motion model, is the accurate
+component, so UKF-style state estimation is reserved for future multi-object /
+occlusion regimes where a motion model adds information, not single-object
+localization. (ii) *Deployment quantization.* The deployed pipeline is already CPU
+real-time in float32;
 **INT8/FP16 quantization via ONNX Runtime / OpenVINO** (with quantization-aware
 training) would roughly halve the forward-pass cost, leaving headroom to promote more
 sensors to the grid-256 head or add temporal context on the cheaper sensors while
