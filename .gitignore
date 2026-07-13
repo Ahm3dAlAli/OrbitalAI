@@ -42,3 +42,6 @@ env/
 
 # ─── Local helpers ─────────────────────────────────────────────────────────
 fetch_remaining.sh
+
+# rolf training logs (regenerable)
+logs/

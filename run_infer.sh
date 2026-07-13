@@ -11,7 +11,9 @@
 #   /work/teamName/DDMMYYYY  (write)      predictions + scoring sheet
 #
 # Everything below is overridable via env vars (see docker run examples in the
-# Dockerfile header).  Defaults reproduce the 0.675 single-ensemble result on CPU.
+# Dockerfile header).  Defaults reproduce the deployed real-time result on CPU:
+# a single temporal model per sensor, with the Stars3 star field routed to a
+# grid-256 multi-object detector (overall mAP 0.668, all sensors < 40 ms).
 set -e
 export KMP_DUPLICATE_LIB_OK=TRUE PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-0}"
@@ -27,6 +29,10 @@ MODELS="${ORBITSIGHT_MODELS:-models/g192_ctx.pt}"
 # Optional distinct EVK4 detector(s) for the per-sensor router (cross-grid).
 # If unset, the DAVIS/DVX models are used for EVK4 too (single-ensemble mode).
 EVK4_MODELS="${ORBITSIGHT_EVK4_MODELS:-}"
+# Stars3 star field -> grid-256 multi-object detector (the 0.545->0.613 win).
+# If the model is absent, Stars3 keeps the default detector's prediction.
+STARS_MODEL="${ORBITSIGHT_STARS_MODEL:-models/g256_ctx.pt}"
+STARS_TOPK="${ORBITSIGHT_STARS_TOPK:-2}"
 
 mkdir -p "${OUT}"
 echo "[run_infer] dataset=${DATASET} out=${OUT} device=${DEVICE}"
@@ -78,6 +84,21 @@ if [ -d "${DATASET}/Testing_sets" ] || [ -d "${DATASET}/Training_sets" ]; then
     infer_split "${DATASET}/Testing_sets"
 else
     infer_split "${DATASET}"                       # flat layout
+fi
+
+# Stars3 star field -> grid-256 multi-object detector (overrides its prediction).
+if [ -f "$STARS_MODEL" ]; then
+    for split in "${DATASET}/Testing_sets" "${DATASET}/Training_sets" "${DATASET}"; do
+        [ -d "$split" ] || continue
+        S3="$(seqs_for "$split" Stars3)"
+        [ -n "$(echo $S3)" ] || continue
+        echo "[run_infer] Stars3 -> grid-256 ($STARS_MODEL, topk=$STARS_TOPK)"
+        python3 scripts/infer_ensemble.py --device "$DEVICE" --topk "$STARS_TOPK" \
+            --thresh 0.2 --data-dir "$split" --out-dir "$OUT" \
+            --models "$STARS_MODEL" --sequences $S3
+    done
+else
+    echo "[run_infer] Stars3 grid-256 model ($STARS_MODEL) absent -> keeping default"
 fi
 
 echo "[run_infer] generating Evaluation_Metrics.xlsx"
