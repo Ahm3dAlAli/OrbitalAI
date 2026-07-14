@@ -19,6 +19,48 @@ import torch.nn.functional as F
 from .evt_model import MaskedSelfAttention, LinearAttention, FFN
 
 
+class SSMMixer(nn.Module):
+    """Diagonal state-space (S4D-style) token mixer — a linear-time, bidirectional
+    alternative to self-attention (the 'ssm' variant of the encoder).
+
+    Each channel c is a real one-state SSM  h_t = a_c h_{t-1} + b_c x_t,  y_t = h_t,
+    with a learned decay a_c in (0,1).  Its impulse response is the geometric kernel
+    K_l = b_c a_c^l, applied to the token sequence by FFT causal convolution
+    (O(L log L)); forward + backward scans give global context in linear time.
+    This is the recurrent/state-space temporal integrator, cast as a token mixer so
+    it slots into the existing CenterNet encoder and ablation."""
+
+    def __init__(self, dim, heads=4):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+        # per-channel decay logits spread over fast->slow time-scales
+        self.a_logit = nn.Parameter(torch.linspace(0.5, 4.0, dim).unsqueeze(0))
+        self.b_f = nn.Parameter(torch.randn(1, dim) * 0.5)
+        self.b_b = nn.Parameter(torch.randn(1, dim) * 0.5)
+        self.D = nn.Parameter(torch.ones(dim))
+        self.out = nn.Linear(dim, dim)
+
+    def _causal_conv(self, x, b):
+        B, L, C = x.shape
+        a = torch.sigmoid(self.a_logit).clamp(1e-4, 1 - 1e-4)     # (1,C) in (0,1)
+        l = torch.arange(L, device=x.device).float().unsqueeze(1)  # (L,1)
+        K = b * torch.exp(l * torch.log(a))                        # (L,C) = b*a^l
+        n = 1
+        while n < 2 * L:
+            n *= 2
+        Xf = torch.fft.rfft(x, n=n, dim=1)
+        Kf = torch.fft.rfft(K.unsqueeze(0), n=n, dim=1)
+        return torch.fft.irfft(Xf * Kf, n=n, dim=1)[:, :L]
+
+    def forward(self, x, key_padding_mask=None):
+        r = x
+        z = self.norm(x)
+        y = self._causal_conv(z, self.b_f)                         # forward scan
+        y = y + self._causal_conv(z.flip(1), self.b_b).flip(1)     # backward scan
+        y = y + self.D * z
+        return r + self.out(y)
+
+
 class EventCenterNet(nn.Module):
     def __init__(self, grid=128, patch=8, tbins=3, dim=128, heads=4,
                  enc_layers=3, hm_div=2, variant="evt"):
@@ -30,7 +72,7 @@ class EventCenterNet(nn.Module):
         self.embed = nn.Conv2d(C, dim, patch, stride=patch)
         self.pos = nn.Parameter(torch.zeros(1, self.gp * self.gp, dim))
         nn.init.trunc_normal_(self.pos, std=0.02)
-        Attn = LinearAttention if variant == "lina" else MaskedSelfAttention
+        Attn = {"lina": LinearAttention, "ssm": SSMMixer}.get(variant, MaskedSelfAttention)
         self.enc = nn.ModuleList([nn.ModuleList([Attn(dim, heads), FFN(dim)])
                                   for _ in range(enc_layers)])
         # upsample token map (gp x gp) -> heatmap (hm x hm)

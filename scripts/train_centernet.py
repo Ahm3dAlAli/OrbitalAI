@@ -75,7 +75,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default="OrbitSight_Dataset/Training_sets")
     ap.add_argument("--out", default="models/evt_centernet.pt")
-    ap.add_argument("--variant", choices=["evt", "lina"], default="evt")
+    ap.add_argument("--variant", choices=["evt", "lina", "ssm"], default="evt",
+                    help="encoder token mixer: evt=masked attention, lina=linear "
+                         "attention, ssm=diagonal state-space (S4D-style)")
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--patience", type=int, default=6,
                     help="early-stop after this many epochs w/o val improvement")
