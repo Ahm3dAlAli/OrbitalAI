@@ -1,10 +1,12 @@
-# OrbitSight — reproducible inference container for the winning deep pipeline
-# (multi-window temporal-context CenterNet + TTA, per-sensor routed).
+# OrbitSight — reproducible inference container for the deployed real-time pipeline.
 #
-# CPU-only by design: the pipeline is measured real-time on CPU (~15-17 ms/window
-# end-to-end, well under the 40 ms budget — see ROADMAP.md §4), so the image runs
-# anywhere with no CUDA/nvidia-docker dependency.  A GPU variant is one line away
-# (see the note at the bottom).
+# Deployed per-sensor pipeline (mAP 0.692 real-time, all sensors < 40 ms CPU):
+#   EVK4          -> temporal-context CenterNet (g192_ctx)
+#   DAVIS, Stars3 -> grid-256 CenterNet w/ hard-negative mining (g256_hn)
+#   Thuraya3      -> temporal model + coasting Kalman recall recovery
+# CPU-only by design: measured 15-38 ms/window end-to-end, so the image runs
+# anywhere with no CUDA/nvidia-docker dependency.  (Offline max-accuracy 0.709 uses
+# cross-grid ensembling + TTA at ~211 ms — not the real-time path.)
 #
 # Build:
 #   docker build -t orbitsight .
@@ -15,14 +17,8 @@
 #     -v /path/to/output:/work \
 #     orbitsight
 #
-# Reproduce the exact 0.675 per-sensor router (needs the cross-grid EVK4 models
-# baked into models/):
-#   docker run --rm -v .../dataset:/OrbitSight_dataset:ro -v .../out:/work \
-#     -e ORBITSIGHT_MODELS="models/g192_ctx.pt models/g192_ctx_s2.pt" \
-#     -e ORBITSIGHT_EVK4_MODELS="models/g128_xg.pt models/g192_xg.pt" \
-#     orbitsight
-#
-# Run the classical LightGBM pipeline instead (no torch path):
+# The Stars3/DAVIS grid-256 model and Thuraya3 coasting are on by default; override
+# via ORBITSIGHT_G256_MODEL / ORBITSIGHT_COAST if needed. Classical LightGBM path:
 #   docker run --rm ... orbitsight sh run.sh
 FROM python:3.11-slim
 
@@ -50,10 +46,13 @@ COPY models/     ./models/
 COPY run.sh run_infer.sh ./
 RUN chmod +x run.sh run_infer.sh
 
-# Guard: the 0.675 temporal-context checkpoint must be baked in.
-# Copy models/g192_ctx.pt from rolf before building.
+# Guard: the deployed checkpoints must be baked in. g192_ctx is required (EVK4 +
+# Thuraya3 base); g256_hn drives DAVIS/Stars3 (0.692) — the pipeline degrades to the
+# temporal model for those sensors if it is absent, so only g192_ctx is hard-required.
 RUN test -f models/g192_ctx.pt || \
-    { echo "ERROR: models/g192_ctx.pt missing — copy the 0.675 checkpoint into models/ first."; exit 1; }
+    { echo "ERROR: models/g192_ctx.pt missing — bake the temporal checkpoint into models/."; exit 1; }
+RUN test -f models/g256_hn.pt || \
+    echo "WARNING: models/g256_hn.pt absent — DAVIS/Stars3 fall back to g192_ctx (mAP ~0.66, not 0.692)."
 
 ENV KMP_DUPLICATE_LIB_OK=TRUE \
     PYTHONUNBUFFERED=1 \
