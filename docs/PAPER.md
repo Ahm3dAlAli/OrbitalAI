@@ -284,6 +284,30 @@ beats the classical pipeline (0.289 vs. 0.249). We keep the spiking/point rows
 global-headed to document the diagnostic, and note they are therefore head-limited,
 not a fair measure of those families.
 
+**Attention vs. a state-space backbone.** With the head fixed, we compare the
+encoder token mixer itself: the masked-attention encoder against a **diagonal
+state-space (S4D-style) mixer** — a real one-state SSM per channel,
+`h_t = a_c h_{t-1} + b_c x_t`, applied bidirectionally by FFT causal convolution
+(linear-time). Both are trained at the deployed recipe (grid-192, ±3-window
+context, identical schedule).
+
+**Table 4b — Attention vs. state-space encoder (grid-192, ctx=3, single model).**
+
+| Encoder | mAP | EVK4 | DAVIS | Stars3 | Thuraya3 | s/epoch |
+|---|---:|---:|---:|---:|---:|---:|
+| Masked attention | **0.651** | 0.859 | 0.729 | 0.545 | 0.469 | ~160 |
+| Diagonal SSM (S4D) | 0.562 | 0.768 | 0.619 | 0.441 | 0.421 | **~94** |
+
+The SSM **matches the transformer's validation loss (0.78) and trains ≈ 1.8×
+faster** (linear-time recurrence vs. quadratic attention), yet reaches **lower
+detection AP (0.562 vs. 0.651)** — a clean illustration that validation loss is not
+detection AP. The gap is uniform across sensors and interpretable: attention's
+**content-based** mixing routes each sparse object cluster to the relevant tokens,
+whereas the SSM's **position-ordered** scan over raster-flattened tokens has no such
+content routing, so it localizes sparse events less precisely. Attention remains the
+accuracy choice for sparse-event detection; the state-space encoder is a viable,
+markedly cheaper alternative when compute — not accuracy — is the binding constraint.
+
 ### 5.4 DVX ablation: where the levers help — and where they don't (new)
 
 The two dim DVX sequences dominate the difficulty; we ablate them separately.
@@ -489,6 +513,10 @@ right way to combine these complementary strengths.
 - **New ablation (Table 5):** DVX-lever study — which levers help (grid-256, hard-neg,
   local coasting) and which do not (dim-aug, reweighting, ctx±5, center-only smoothing,
   global fill), with the *local-coasting-succeeds-where-global-fit-fails* finding.
+- **State-space backbone ablation (Table 4b):** a diagonal S4D-style SSM encoder vs.
+  masked attention at the deployed recipe — SSM matches val loss and trains ~1.8×
+  faster (linear-time) but reaches lower AP (0.562 vs. 0.651); content-based attention
+  localizes sparse events better than a position-ordered state-space scan.
 - **Frontier proof (§5.4):** four-layer analysis of the Thuraya3 precision floor —
   box-size decomposition, coast-age histogram, coast-cap sweep + confidence-discount,
   and a **GHOST-adapted feature-space probe** (z-score FP-vs-TP AUROC 0.455 / 0.486,
