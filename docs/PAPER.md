@@ -328,6 +328,27 @@ the finding: *global* fits fail on this non-polynomial track, but *local* coasti
 succeeds. This bounds the faint-object problem to a recall-recovery task and shows
 which class of tracker solves it.
 
+**The residual Thuraya3 precision (0.41) is a proven frontier, not an untried
+lever.** We diagnosed the 285 false positives by *coast-age* — windows since the
+track last had above-threshold (non-coasted) evidence. They do **not** pile up in
+over-coasted tails: only 8 % sit at age ≥ 6, and the coasted FPs decay smoothly with
+age (69, 31, 14, 10, 0 across ages 1–2, 3–5, 6–10, 11–20, 21+). **56 % (161) are
+age-0 *real detections*** — the detector firing above threshold, not a coasting
+artifact. Two levers shaped like this problem come up empty. (i) A *coast cap*
+(terminate a track after N evidence-free windows) has **no knee**: sweeping it is the
+max-coast sweep, where AP rises monotonically to the cap-50 optimum (0.480 → 0.506),
+so tightening only sheds recall. (ii) *Confidence discounting is already applied* —
+coasted boxes emit at median confidence 0.40 vs 0.48 for evidence-backed ones, so
+they already sort below true detections on the PR curve. Decomposing the 161 age-0
+FPs by center distance, **83 % (133) are phantoms in windows with no ground-truth
+object at all** — the detector confidently fires where the GT is empty — and only
+17 % are resizable near-misses (a box-size sweep confirms +0.006 at 12 px, then
+IoU-loss flips tight true positives to FPs beyond 13 px). The precision floor is
+therefore fully explained: it is *confident detection in windows the ground truth
+considers empty*, which no gating, capping, resizing, or reordering can touch — only
+a stronger detector or more faint-object training data would. This is the frontier of
+the current signal, not an unexplored lever.
+
 ### 5.5 Where temporal context helps
 
 Multi-window context roughly doubles AP on Thuraya3 (0.233 → 0.469) and lifts DAVIS
