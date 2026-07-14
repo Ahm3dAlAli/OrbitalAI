@@ -308,6 +308,8 @@ content routing, so it localizes sparse events less precisely. Attention remains
 accuracy choice for sparse-event detection; the state-space encoder is a viable,
 markedly cheaper alternative when compute — not accuracy — is the binding constraint.
 
+![Attention vs state-space backbone](figures/ssm_vs_attn.png)
+
 ### 5.4 DVX ablation: where the levers help — and where they don't (new)
 
 The two dim DVX sequences dominate the difficulty; we ablate them separately.
@@ -321,6 +323,8 @@ Gaussian skirt around real objects is excluded, so near-misses / real signal are
 never penalized. This lifts Stars3 to **0.651** (precision 0.44 → 0.49, recall held
 at 0.82 — the model suppresses false stars without losing true ones) and, as a
 bonus, DAVIS to **0.753**. Multi-peak (top-k) decoding on grid-192 adds only +0.004.
+
+![DVX-lever ablation](figures/dvx_levers.png)
 
 **Table 5 — Thuraya3 (faint single object): which levers move recall.**
 
@@ -372,6 +376,8 @@ therefore fully explained: it is *confident detection in windows the ground trut
 considers empty*, which no gating, capping, resizing, or reordering can touch — only
 a stronger detector or more faint-object training data would. This is the frontier of
 the current signal, not an unexplored lever.
+
+![Thuraya3 FP coast-age histogram](figures/coast_age_hist.png)
 
 **A feature-space probe (GHOST-adapted) confirms the floor is intrinsic.** As a final
 check we adapt the Gaussian-hypothesis z-score of GHOST [Rabinowitz et al. 2025] — a
