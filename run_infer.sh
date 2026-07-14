@@ -29,10 +29,12 @@ MODELS="${ORBITSIGHT_MODELS:-models/g192_ctx.pt}"
 # Optional distinct EVK4 detector(s) for the per-sensor router (cross-grid).
 # If unset, the DAVIS/DVX models are used for EVK4 too (single-ensemble mode).
 EVK4_MODELS="${ORBITSIGHT_EVK4_MODELS:-}"
-# Stars3 star field -> grid-256 multi-object detector (the 0.545->0.613 win).
-# If the model is absent, Stars3 keeps the default detector's prediction.
-STARS_MODEL="${ORBITSIGHT_STARS_MODEL:-models/g256_ctx.pt}"
+# DAVIS + Stars3 -> grid-256 hard-negative model (DAVIS 0.729->0.753, Stars3
+# 0.613->0.651). If absent, those sensors keep the default detector's prediction.
+G256_MODEL="${ORBITSIGHT_G256_MODEL:-models/g256_hn.pt}"
 STARS_TOPK="${ORBITSIGHT_STARS_TOPK:-2}"
+# Thuraya3 faint object -> coasting Kalman recall recovery (0.469->0.506).
+COAST="${ORBITSIGHT_COAST:-1}"; COAST_MAX="${ORBITSIGHT_COAST_MAX:-50}"
 
 mkdir -p "${OUT}"
 echo "[run_infer] dataset=${DATASET} out=${OUT} device=${DEVICE}"
@@ -86,19 +88,31 @@ else
     infer_split "${DATASET}"                       # flat layout
 fi
 
-# Stars3 star field -> grid-256 multi-object detector (overrides its prediction).
-if [ -f "$STARS_MODEL" ]; then
+# DAVIS + Stars3 -> grid-256 hard-negative model (overrides their predictions).
+if [ -f "$G256_MODEL" ]; then
     for split in "${DATASET}/Testing_sets" "${DATASET}/Training_sets" "${DATASET}"; do
         [ -d "$split" ] || continue
-        S3="$(seqs_for "$split" Stars3)"
-        [ -n "$(echo $S3)" ] || continue
-        echo "[run_infer] Stars3 -> grid-256 ($STARS_MODEL, topk=$STARS_TOPK)"
+        SEQS="$(seqs_for "$split" Stars3) $(seqs_for "$split" DAVIS)"
+        [ -n "$(echo $SEQS)" ] || continue
+        echo "[run_infer] DAVIS+Stars3 -> grid-256 hard-neg ($G256_MODEL, topk=$STARS_TOPK)"
         python3 scripts/infer_ensemble.py --device "$DEVICE" --topk "$STARS_TOPK" \
             --thresh 0.2 --data-dir "$split" --out-dir "$OUT" \
-            --models "$STARS_MODEL" --sequences $S3
+            --models "$G256_MODEL" --sequences $SEQS
     done
 else
-    echo "[run_infer] Stars3 grid-256 model ($STARS_MODEL) absent -> keeping default"
+    echo "[run_infer] grid-256 hard-neg model ($G256_MODEL) absent -> keeping default"
+fi
+
+# Thuraya3 faint object -> coasting Kalman recall recovery (in place, on $OUT).
+if [ "$COAST" = "1" ]; then
+    for split in "${DATASET}/Testing_sets" "${DATASET}/Training_sets" "${DATASET}"; do
+        [ -d "$split" ] || continue
+        TH="$(seqs_for "$split" Thuraya3)"
+        [ -n "$(echo $TH)" ] || continue
+        echo "[run_infer] Thuraya3 -> coasting Kalman (max-coast=$COAST_MAX)"
+        python3 scripts/kalman_coast.py --data-dir "$split" --pred-dir "$OUT" \
+            --out-dir "$OUT" --max-coast "$COAST_MAX" --decay 0.92 --sequences $TH
+    done
 fi
 
 echo "[run_infer] generating Evaluation_Metrics.xlsx"
