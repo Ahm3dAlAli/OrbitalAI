@@ -349,6 +349,24 @@ considers empty*, which no gating, capping, resizing, or reordering can touch �
 a stronger detector or more faint-object training data would. This is the frontier of
 the current signal, not an unexplored lever.
 
+**A feature-space probe (GHOST-adapted) confirms the floor is intrinsic.** As a final
+check we adapt the Gaussian-hypothesis z-score of GHOST [Rabinowitz et al. 2025] — a
+hyperparameter-free open-set-*classification* method — into a *diagnostic* for
+detection false positives: we sample the CenterNet encoder embedding at each decoded
+peak, fit a diagonal Gaussian over true-positive embeddings, and score every detection
+by its L1 z-score s = Σ_d |φ_d − μ_d| / σ_d. If phantoms deviated in feature space, a
+GHOST-style post-hoc reject would remove them. They do not: on both dim sequences the
+z-score fails to separate false positives from true positives (FP-vs-TP AUROC **0.455**
+on Thuraya3, **0.486** on Stars3 — at chance, with phantoms if anything slightly
+*closer* to the true-positive mean). The detector fires confidently on empty-window
+patterns whose learned embeddings are statistically identical to real RSOs. This is
+the deepest layer of the frontier: the precision floor is the detector's *decision
+boundary itself*, not a post-hoc-correctable artifact — no gating, capping, resizing,
+reordering, *or feature-space rejection* touches it. We report this as a negative
+result and, notably, as a reusable *frontier diagnostic*: adapting the GHOST z-score
+from classification to single-class event detection gives a cheap, hyperparameter-free
+test of whether a detector's false positives are separable in feature space at all.
+
 ### 5.5 Where temporal context helps
 
 Multi-window context roughly doubles AP on Thuraya3 (0.233 → 0.469) and lifts DAVIS
@@ -471,6 +489,12 @@ right way to combine these complementary strengths.
 - **New ablation (Table 5):** DVX-lever study — which levers help (grid-256, hard-neg,
   local coasting) and which do not (dim-aug, reweighting, ctx±5, center-only smoothing,
   global fill), with the *local-coasting-succeeds-where-global-fit-fails* finding.
+- **Frontier proof (§5.4):** four-layer analysis of the Thuraya3 precision floor —
+  box-size decomposition, coast-age histogram, coast-cap sweep + confidence-discount,
+  and a **GHOST-adapted feature-space probe** (z-score FP-vs-TP AUROC 0.455 / 0.486,
+  at chance) — proving the floor is the detector's decision boundary, not a
+  post-hoc-correctable artifact. The probe is a reusable, hyperparameter-free
+  diagnostic (GHOST re-purposed from OSR classification to detection FP separability).
 - **Latency (§5.7):** explicit, *measured* real-time-vs-offline split — deployed
   15–38 ms/window (0.692) vs. offline 211 ms (0.709); the "≈ 4 ms" claim in the prior
   draft was a single grid-128 forward, not the deployed grid-192/256 config.
