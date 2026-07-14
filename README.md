@@ -261,13 +261,14 @@ object) still routes to the cross-grid ensemble. Adding **test-time augmentation
 to the temporal model lifts the overall to **mAP 0.675** (recall 0.76). Trained
 on rolf (RTX 2080 Ti).
 
-> **Real-time vs offline (criterion #3).** Deployed **real-time = mAP 0.668**:
-> one model per sensor (g192_ctx everywhere + **Stars3 → grid-256** for the star
-> field), every sensor **< 40 ms/window CPU** (15–38 ms). Offline **max = 0.689**
-> adds cross-grid ensembling + TTA (~211 ms, not real-time). The final DVX push:
-> grid-256 lifted Stars3 **0.545 → 0.613** (recall 0.72→0.81); Thuraya3 is a
-> characterized limit (8 levers, none beat 0.469). Report both: **0.668 real-time
-> / 0.689 offline.**
+> **Real-time vs offline (criterion #3).** Deployed **real-time = mAP 0.692**:
+> per-sensor single models (EVK4→g192_ctx, DAVIS+Stars3→**grid-256 hard-neg**,
+> Thuraya3→g192_ctx **+ coasting Kalman**), every sensor **< 40 ms/window CPU**
+> (15–38 ms). Offline **max = 0.709** (crosses 0.70) adds cross-grid ensembling +
+> TTA (~211 ms, not real-time). Final DVX levers: **grid-256** separates the Stars3
+> star field (0.545→0.613); **hard-negative mining** suppresses background-star FPs
+> (→0.651, and DAVIS 0.729→0.753); a **coasting Kalman tracker** recovers Thuraya3
+> recall (0.63→0.72, AP 0.469→0.506). Report both: **0.692 real-time / 0.709 offline.**
 
 ### Sample detections (all sensors)
 

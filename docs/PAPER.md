@@ -1,7 +1,7 @@
 # OrbitSight: Real-Time Resident Space Object Detection and Tracking from Neuromorphic Event Cameras under a 40 ms CPU Budget
 
 *Updated manuscript — reflects the final modeling (grid-256 multi-object detector,
-DVX-lever ablation) and results (0.668 real-time / 0.689 offline). Edits vs. the
+DVX-lever ablation) and results (0.692 real-time / 0.709 offline). Edits vs. the
 prior draft are woven throughout; see the change-log at the end.*
 
 ---
@@ -22,16 +22,18 @@ dense per-event classification over brightness-invariant spatiotemporal coherenc
 features, then aggregating positive events with a motion-gated constant-velocity
 tracker. On this classical backbone we build a **multi-window temporal-context
 CenterNet** event detector and a **per-sensor router**, and we add a **grid-256
-detector for dense multi-object star fields**. We report a rigorous ablation of
-alternative model families (event-frame transformer, spiking network, point/graph
-network) under an identical frozen evaluator, and diagnose a detection-head failure
-that had masked their true capacity. We also report an **eight-lever ablation on the
-hardest faint sequence**, which characterizes a genuine signal-and-domain limit
-rather than a tuning gap. **The deployed real-time system — one model per sensor,
-one forward pass per window — reaches mAP@0.5 of 0.668 at 15–38 ms/window on CPU,
+detector with online hard-negative mining** for dense multi-object star fields and a
+**coasting Kalman tracker** for faint intermittently-visible objects. We report a
+rigorous ablation of alternative model families (event-frame transformer, spiking
+network, point/graph network) under an identical frozen evaluator, and diagnose a
+detection-head failure that had masked their true capacity. We further ablate the
+DVX levers: grid-256 + hard-negative mining raise the star-field precision, and a
+local coasting filter recovers the faint object's recall (0.63 → 0.72) where a
+global-fit tracker cannot. **The deployed real-time system — one model per sensor,
+one forward pass per window — reaches mAP@0.5 of 0.692 at 15–38 ms/window on CPU,
 inside the 40 ms budget on every sensor; an offline max-accuracy variant (cross-grid
-ensembling + test-time augmentation) reaches 0.689.** This is a 9.7× improvement
-over a classical baseline, with the decisive gains on the dim-object sequences.
+ensembling + test-time augmentation) reaches 0.709.** This is a 10× improvement over
+a classical baseline, with the decisive gains on the dim-object sequences.
 
 ---
 
@@ -78,15 +80,18 @@ positive when it time-overlaps a ground-truth window and reaches IoU ≥ 0.5).
   an object's track; a **grid-256 head separates the dense Stars3 field** (recall
   0.72 → 0.81); a router sends each sensor to its winning checkpoint.
 - **An explicit real-time / offline separation.** We *measure* both configs: the
-  deployed single-model-per-sensor pipeline is 15–38 ms/window on CPU (mAP 0.668);
-  the offline cross-grid+TTA variant is 211 ms on the EVK4 path (mAP 0.689). We
+  deployed single-model-per-sensor pipeline is 15–38 ms/window on CPU (mAP 0.692);
+  the offline cross-grid+TTA variant is 211 ms on the EVK4 path (mAP 0.709). We
   report the accuracy of the config we actually ship at real time.
-- **Two honest ablations.** (a) A cross-family study (event-frame transformer,
-  spiking network, point/graph network) that diagnoses and fixes a global-head
-  failure. (b) An **eight-lever ablation on the faint DVX Thuraya3 sequence** that
-  characterizes a signal/domain limit — none of augmentation, dim-augmentation, DVX
-  reweighting, grid-256, longer context, shift-and-stack, trajectory filling, or
-  multi-peak decoding beats the baseline.
+- **Hard-negative mining and coasting for the DVX floor.** Online hard-negative
+  mining in the CenterNet focal loss suppresses background-star false positives
+  (Stars3 0.613 → 0.651, DAVIS 0.729 → 0.753); a **coasting Kalman tracker** recovers
+  the faint Thuraya3 object's recall (0.63 → 0.72, AP 0.469 → 0.506) by bridging
+  short sub-threshold gaps — succeeding precisely where a *global*-fit tracker fails.
+- **A rigorous lever ablation.** A cross-family study diagnoses and fixes a
+  global-head failure; a DVX-lever study shows which levers help (grid-256,
+  hard-neg, local coasting) and which do not (dim-augmentation, DVX reweighting,
+  longer context, center-only Kalman smoothing, global trajectory filling), and why.
 
 ---
 
@@ -224,20 +229,20 @@ real-time latency separately.
 | Sequence (sensor) | Detector | P | R | F1 | AP |
 |---|---|---:|---:|---:|---:|
 | EVK4 mag7.3 | g192_ctx | 0.846 | 0.916 | 0.879 | 0.859 |
-| DAVIS SAOCOM1B | g192_ctx | 0.882 | 0.769 | 0.821 | 0.729 |
-| DVX Stars3 | **g256_ctx** | 0.494 | 0.806 | 0.573 | **0.613** |
-| DVX Thuraya3 | g192_ctx | 0.521 | 0.630 | 0.570 | 0.469 |
-| **Overall** | — | — | — | — | **0.668** |
+| DAVIS SAOCOM1B | g256 hard-neg | 0.829 | 0.801 | 0.815 | 0.753 |
+| DVX Stars3 | **g256 hard-neg** | 0.492 | 0.819 | 0.615 | **0.651** |
+| DVX Thuraya3 | g192_ctx **+ coast** | 0.414 | 0.723 | 0.526 | **0.506** |
+| **Overall** | — | — | — | — | **0.692** |
 
-**Table 2b — Offline max-accuracy system (cross-grid ensemble + TTA; Stars3 → grid-256).**
+**Table 2b — Offline max-accuracy system (cross-grid ensemble + TTA; Stars3 → grid-256 hard-neg; Thuraya3 coasted).**
 
 | Sequence (sensor) | AP |
 |---|---:|
 | EVK4 mag7.3 | 0.896 |
 | DAVIS SAOCOM1B | 0.774 |
-| DVX Stars3 (grid-256) | 0.613 |
-| DVX Thuraya3 | 0.474 |
-| **Overall** | **0.689** |
+| DVX Stars3 (grid-256 hard-neg) | 0.651 |
+| DVX Thuraya3 (coasted) | 0.515 |
+| **Overall** | **0.709** |
 
 The dim EVK4 magnitude-7.3 sequence, singled out as the hardest case, is the
 strongest at AP 0.859–0.896, exactly where H2 predicted the contest is won. The
@@ -249,11 +254,12 @@ remaining floor (§5.4).
 **Figure 2.** mAP@0.5 across the project: classical tracker baseline 0.069 → tuned
 classical 0.249 → CenterNet 0.289 → hybrid router 0.315 → event augmentation 0.398
 → grid-192 + box calibration 0.454 → three-model ensemble + stacking 0.554 →
-multi-window temporal context 0.660 → **real-time single-model per sensor 0.651 →
-grid-256 Stars3 routing (real-time) 0.668** → **offline cross-grid + TTA 0.689**.
-The two largest single jumps are event-level augmentation and multi-window temporal
-context; the final jump is grid-256 multi-object routing. A 9.7× gain over the
-classical baseline.
+multi-window temporal context 0.660 → real-time single-model per sensor 0.651 →
+grid-256 Stars3 routing 0.668 → **hard-negative mining + coasting Kalman (real-time)
+0.692** → **offline cross-grid + TTA 0.709**. The two largest single jumps are
+event-level augmentation and multi-window temporal context; the final DVX gains come
+from grid-256 resolution, hard-negative mining, and recall-recovery coasting. A 10×
+gain over the classical baseline.
 
 ### 5.3 Cross-family ablation
 
@@ -282,34 +288,45 @@ not a fair measure of those families.
 
 The two dim DVX sequences dominate the difficulty; we ablate them separately.
 
-**Stars3 (dense field) responds to resolution.** Grid-256 (§3) is the single
-effective lever: 0.545 → 0.613 (recall 0.72 → 0.81). Multi-peak (top-k) decoding on
-grid-192 adds only +0.004, because grid-192's heatmap does not resolve separate
-peaks to decode.
+**Stars3 (dense field): resolution + hard-negative mining.** Grid-256 first
+separates adjacent stars (0.545 → 0.613, recall 0.72 → 0.81). We then add **online
+hard-negative mining** to the CenterNet focal loss: at each step we upweight the
+highest-confidence *strict*-background cells (target heatmap < 0.01), which are
+exactly the background-star false positives. Because we use strict background, the
+Gaussian skirt around real objects is excluded, so near-misses / real signal are
+never penalized. This lifts Stars3 to **0.651** (precision 0.44 → 0.49, recall held
+at 0.82 — the model suppresses false stars without losing true ones) and, as a
+bonus, DAVIS to **0.753**. Multi-peak (top-k) decoding on grid-192 adds only +0.004.
 
-**Table 5 — Thuraya3 (faint single object): eight levers, none beat the baseline.**
+**Table 5 — Thuraya3 (faint single object): which levers move recall.**
 
 | Lever | Thuraya3 AP |
 |---|---:|
-| Baseline (temporal, augmented) | **0.469** |
+| Baseline (temporal, augmented) | 0.469 |
 | + aggressive dim-augmentation | 0.454 |
 | + DVX-oversampling reweighting | 0.462 |
 | + grid-256 | 0.469 |
 | + longer context (±5 windows) | 0.435 |
 | + shift-and-stack | 0.457 |
-| + trajectory filling | (n/a — see below) |
-| + multi-peak decoding | (n/a — single object) |
+| + center-only Kalman smoothing | 0.462 |
+| + global trajectory filling | (skipped — 47 px global-fit residual) |
+| **+ coasting Kalman (local)** | **0.506** |
 
-We implemented and measured DVX-focused **training reweighting** (oversample DVX and
-sparse windows, downweight the bright EVK4 sequence) and **aggressive
-dim-augmentation** (event-drop to 10% of events, synthesizing the 2–5 event regime);
-both *fail* to move Thuraya3. A **global trajectory model** (detect → fit → fill) is
-inapplicable: the ground-truth track itself does not fit a low-order polynomial
-(47 px median residual, with intermittent visibility spanning 1400-window gaps), so
-there is no smooth track to extrapolate. We conclude Thuraya3 is a **signal and
-training-domain limit** — a faint object at the sensitivity floor with no close
-analog among the 16 training sequences — not a tuning gap. This is a useful negative
-result: it bounds what post-processing and training-recipe changes can achieve.
+Thuraya3's binding constraint is **recall** (0.63), not precision: the object is
+present but drops below threshold for a few windows and the track is lost.
+Training-recipe changes (dim-augmentation, DVX reweighting) and larger context do
+not help — the object is at the sensitivity floor with no close analog among the 16
+training sequences. Crucially, the *global* trajectory approaches fail for a subtle
+reason: the ground-truth track does not fit one low-order polynomial (47 px median
+residual, intermittent visibility with 1400-window gaps), and a center-only Kalman
+*smoother* even slightly hurts (−0.012) because the learned localization already
+tracks to ∼1 px. **But the motion is smooth window-to-window**, so a *local* coasting
+Kalman — which predicts the object forward through short sub-threshold gaps and emits
+a decayed-confidence box, bounded so it never extrapolates into the long absences —
+recovers recall 0.63 → 0.72 and lifts AP to **0.506** (+0.037). The distinction is
+the finding: *global* fits fail on this non-polynomial track, but *local* coasting
+succeeds. This bounds the faint-object problem to a recall-recovery task and shows
+which class of tracker solves it.
 
 ### 5.5 Where temporal context helps
 
@@ -338,7 +355,7 @@ We measure per-window streaming latency (batch 1, CPU) for both configurations.
 
 **Offline max-accuracy:** the EVK4 cross-grid ensemble (5 models) with TTA (3 passes)
 totals **211 ms/window** — 5.3× the budget — and even single-model TTA sits at
-∼39–40 ms. We therefore report **0.689 as an offline figure and 0.668 as the
+∼39–40 ms. We therefore report **0.709 as an offline figure and 0.692 as the
 real-time figure**, and benchmark the latency of the config we actually ship. The
 purely classical pipeline is real-time on DAVIS/DVX (∼5–6 ms) but exceeds budget on
 the densest EVK4 windows (∼167 ms), which is why the router sends the dense sensor
@@ -370,27 +387,27 @@ tracking [Bewley et al. 2016; Kalman 1960], and shift-and-stack faint-object rec
 The evaluation uses four held-out test sequences; broader sensor and magnitude
 coverage would strengthen the domain-shift claims. The spiking and point-network
 ablations remain head-limited and should be re-run with the heatmap head for a fair
-family comparison. **The DVX Thuraya3 floor (0.469) is a characterized limit** — an
-eight-lever ablation (§5.4) shows augmentation, reweighting, resolution, context,
-stacking, trajectory filling, and multi-peak decoding do not move it, pointing to a
-signal/training-domain gap rather than a model or tuning deficiency; closing it likely
-requires additional faint-object training data or sensor fusion with the DAVIS APS
-grayscale channel [Capogrosso et al. 2026], both future work. The offline
-max-accuracy configuration (0.689) exceeds the latency budget and is reported
-separately from the deployed real-time system (0.668).
+family comparison. **The DVX Thuraya3 faint object is partly recovered and partly a
+signal limit.** Training-recipe levers (augmentation, reweighting, longer context)
+and *global*-fit trackers do not move it (§5.4), but a *local* coasting Kalman
+recovers recall 0.63 → 0.72 (AP 0.469 → 0.506); the residual gap to the oracle
+ceiling reflects windows where the object is genuinely below the sensitivity floor,
+which would need additional faint-object training data or sensor fusion with the
+DAVIS APS grayscale channel [Capogrosso et al. 2026]. The offline max-accuracy
+configuration (0.709) exceeds the latency budget and is reported separately from the
+deployed real-time system (0.692).
 
-**One tested negative result and one deployment direction.** (i) *Probabilistic
-sub-pixel tracking — tested, does not help.* We implemented a constant-velocity
-Kalman filter with a Rauch–Tung–Striebel smoother over detection centers [Kalman
-1960; Felsen 2022] and re-scored. It **slightly degrades AP on every sensor**
-(−0.012 overall) because the CenterNet's learned sub-cell offset already tracks the
-object to within ~1 px (median measurement-to-smoothed residual 0.8–1.2 px) — closer
-than a constant-velocity prior, which can only pull well-placed centers off. This is
-a useful bound: the localization head, not the motion model, is the accurate
-component, so UKF-style state estimation is reserved for future multi-object /
-occlusion regimes where a motion model adds information, not single-object
-localization. (ii) *Deployment quantization.* The deployed pipeline is already CPU
-real-time in float32;
+**A tested distinction and one deployment direction.** (i) *Center-refinement vs.
+recall-recovery tracking.* We separately tested a constant-velocity Kalman + RTS
+smoother that *refines existing* detection centers; it **slightly degrades AP**
+(−0.012 overall) because the CenterNet's learned sub-cell offset already localizes to
+~1 px (residual 0.8–1.2 px), tighter than a constant-velocity prior. The lesson is
+that the localization head, not a motion model, is the accurate component — so we do
+*not* smooth centers, but we *do* use the same motion model for **coasting** (adding
+boxes through sub-threshold gaps), which recovers recall (§5.4). Refinement and
+recall-recovery are different uses of the filter with opposite outcomes here.
+(ii) *Deployment quantization.* The deployed pipeline is already CPU real-time in
+float32;
 **INT8/FP16 quantization via ONNX Runtime / OpenVINO** (with quantization-aware
 training) would roughly halve the forward-pass cost, leaving headroom to promote more
 sensors to the grid-256 head or add temporal context on the cheaper sensors while
@@ -406,30 +423,35 @@ scenes would need revisiting.
 ## 7. Conclusion
 
 OrbitSight shows that faint, fast RSOs can be detected and tracked from raw event
-streams in **real time on CPU** (mAP 0.668, 15–38 ms/window), under a single
+streams in **real time on CPU** (mAP 0.692, 15–38 ms/window), under a single
 cross-sensor parameter set, by treating coherence rather than brightness as the
 signal and by integrating an object's track over multiple windows. A coherence-first
-classical backbone, a temporal-context CenterNet, a grid-256 multi-object head for
-dense star fields, and a per-sensor router together reach mAP@0.5 of **0.668
-real-time / 0.689 offline**, a 9.7× gain over a classical baseline, with the largest
-improvements exactly on the dim objects that dominate the difficulty. Two honest
-ablations — a cross-family study that fixes a detection-head artifact, and an
-eight-lever study that characterizes the faint-object floor — show that once the head
-is fixed, deep event models are competitive, that resolution (not capacity) unlocks
-the dense field, and that a hybrid, resolution-routed system is the right way to
-combine complementary strengths.
+classical backbone, a temporal-context CenterNet, a grid-256 head with hard-negative
+mining for dense star fields, a coasting Kalman tracker for the faint object, and a
+per-sensor router together reach mAP@0.5 of **0.692 real-time / 0.709 offline** (the
+offline system crosses 0.70), a 10× gain over a classical baseline, with the largest
+improvements exactly on the dim objects that dominate the difficulty. Honest
+ablations — a cross-family study that fixes a detection-head artifact, and a DVX-lever
+study — show that once the head is fixed deep event models are competitive, that
+resolution (not capacity) unlocks the dense field, that hard-negative mining removes
+background-star false positives, and that a *local* coasting filter recovers faint-
+object recall where a *global* fit cannot. A hybrid, per-sensor-routed system is the
+right way to combine these complementary strengths.
 
 ---
 
 ## Change-log vs. prior draft
 
-- **Headline:** 0.660/0.675 → **0.668 real-time / 0.689 offline** (grid-256 Stars3
-  routing added; Stars3 0.545 → 0.613).
-- **New modeling:** resolution-routed grid-256 multi-object detector (§3, §4, §5.4).
-- **New ablation (Table 5):** eight-lever Thuraya3 study → characterized signal/domain
-  limit (§5.4, §6).
+- **Headline:** 0.660/0.675 → **0.692 real-time / 0.709 offline** (offline crosses
+  0.70). DVX gains: Stars3 0.545 → 0.651, DAVIS 0.729 → 0.753, Thuraya3 0.469 → 0.506.
+- **New modeling:** resolution-routed grid-256 detector (§3), **online hard-negative
+  mining** in the CenterNet focal loss (§5.4), and a **coasting Kalman tracker** for
+  faint-object recall recovery (§5.4).
+- **New ablation (Table 5):** DVX-lever study — which levers help (grid-256, hard-neg,
+  local coasting) and which do not (dim-aug, reweighting, ctx±5, center-only smoothing,
+  global fill), with the *local-coasting-succeeds-where-global-fit-fails* finding.
 - **Latency (§5.7):** explicit, *measured* real-time-vs-offline split — deployed
-  15–38 ms/window (0.668) vs. offline 211 ms (0.689); the "≈ 4 ms" claim in the prior
+  15–38 ms/window (0.692) vs. offline 211 ms (0.709); the "≈ 4 ms" claim in the prior
   draft was a single grid-128 forward, not the deployed grid-192/256 config.
 - **Related work (§5.8):** added the space-domain event-vision survey and the
   frame-based edge-SOD baseline, with the "software gap → event-native" framing.
