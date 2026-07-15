@@ -1,7 +1,7 @@
 # OrbitSight: Real-Time Resident Space Object Detection and Tracking from Neuromorphic Event Cameras under a 40 ms CPU Budget
 
 *Updated manuscript — reflects the final modeling (grid-256 multi-object detector,
-DVX-lever ablation) and results (0.692 real-time / 0.709 offline). Edits vs. the
+DVX-lever ablation) and results (0.704 real-time / 0.715 offline). Edits vs. the
 prior draft are woven throughout; see the change-log at the end.*
 
 ---
@@ -30,9 +30,9 @@ detection-head failure that had masked their true capacity. We further ablate th
 DVX levers: grid-256 + hard-negative mining raise the star-field precision, and a
 local coasting filter recovers the faint object's recall (0.63 → 0.72) where a
 global-fit tracker cannot. **The deployed real-time system — one model per sensor,
-one forward pass per window — reaches mAP@0.5 of 0.692 at 15–38 ms/window on CPU,
+one forward pass per window — reaches mAP@0.5 of 0.704 at 15–38 ms/window on CPU,
 inside the 40 ms budget on every sensor; an offline max-accuracy variant (cross-grid
-ensembling + test-time augmentation) reaches 0.709.** This is a 10× improvement over
+ensembling + test-time augmentation) reaches 0.715.** This is a 10× improvement over
 a classical baseline, with the decisive gains on the dim-object sequences.
 
 ---
@@ -80,8 +80,8 @@ positive when it time-overlaps a ground-truth window and reaches IoU ≥ 0.5).
   an object's track; a **grid-256 head separates the dense Stars3 field** (recall
   0.72 → 0.81); a router sends each sensor to its winning checkpoint.
 - **An explicit real-time / offline separation.** We *measure* both configs: the
-  deployed single-model-per-sensor pipeline is 15–38 ms/window on CPU (mAP 0.692);
-  the offline cross-grid+TTA variant is 211 ms on the EVK4 path (mAP 0.709). We
+  deployed single-model-per-sensor pipeline is 15–38 ms/window on CPU (mAP 0.704);
+  the offline cross-grid+TTA variant is 211 ms on the EVK4 path (mAP 0.715). We
   report the accuracy of the config we actually ship at real time.
 - **Hard-negative mining and coasting for the DVX floor.** Online hard-negative
   mining in the CenterNet focal loss suppresses background-star false positives
@@ -228,11 +228,11 @@ real-time latency separately.
 
 | Sequence (sensor) | Detector | P | R | F1 | AP |
 |---|---|---:|---:|---:|---:|
-| EVK4 mag7.3 | g192_ctx | 0.846 | 0.916 | 0.879 | 0.859 |
+| EVK4 mag7.3 | g192_ctx (100-ep) | 0.851 | 0.923 | 0.886 | **0.874** |
 | DAVIS SAOCOM1B | g256 hard-neg | 0.829 | 0.801 | 0.815 | 0.753 |
 | DVX Stars3 | **g256 hard-neg** | 0.492 | 0.819 | 0.615 | **0.651** |
-| DVX Thuraya3 | g192_ctx **+ coast** | 0.414 | 0.723 | 0.526 | **0.506** |
-| **Overall** | — | — | — | — | **0.692** |
+| DVX Thuraya3 | g192_ctx (100-ep) **+ coast** | 0.430 | 0.735 | 0.543 | **0.538** |
+| **Overall** | — | — | — | — | **0.704** |
 
 **Table 2b — Offline max-accuracy system (cross-grid ensemble + TTA; Stars3 → grid-256 hard-neg; Thuraya3 coasted).**
 
@@ -241,13 +241,15 @@ real-time latency separately.
 | EVK4 mag7.3 | 0.896 |
 | DAVIS SAOCOM1B | 0.774 |
 | DVX Stars3 (grid-256 hard-neg) | 0.651 |
-| DVX Thuraya3 (coasted) | 0.515 |
-| **Overall** | **0.709** |
+| DVX Thuraya3 (coasted) | 0.538 |
+| **Overall** | **0.715** |
 
 The dim EVK4 magnitude-7.3 sequence, singled out as the hardest case, is the
-strongest at AP 0.859–0.896, exactly where H2 predicted the contest is won. The
+strongest at AP 0.874–0.896, exactly where H2 predicted the contest is won. The
 Stars3 field is lifted decisively by grid-256; the faint Thuraya3 target is the
-remaining floor (§5.4).
+remaining floor (§5.4). Retraining the two deployed models to 100 epochs (patience
+15) from fuller convergence recovered EVK4 0.859 → 0.874 and Thuraya3 raw 0.469 →
+0.524 (coasted → 0.538), lifting the real-time system 0.692 → 0.704.
 
 ### 5.2 Development trajectory
 
@@ -256,7 +258,7 @@ classical 0.249 → CenterNet 0.289 → hybrid router 0.315 → event augmentati
 → grid-192 + box calibration 0.454 → three-model ensemble + stacking 0.554 →
 multi-window temporal context 0.660 → real-time single-model per sensor 0.651 →
 grid-256 Stars3 routing 0.668 → **hard-negative mining + coasting Kalman (real-time)
-0.692** → **offline cross-grid + TTA 0.709**. The two largest single jumps are
+0.704** → **offline cross-grid + TTA 0.715**. The two largest single jumps are
 event-level augmentation and multi-window temporal context; the final DVX gains come
 from grid-256 resolution, hard-negative mining, and recall-recovery coasting. A 10×
 gain over the classical baseline.
@@ -450,7 +452,7 @@ We measure per-window streaming latency (batch 1, CPU) for both configurations.
 
 **Offline max-accuracy:** the EVK4 cross-grid ensemble (5 models) with TTA (3 passes)
 totals **211 ms/window** — 5.3× the budget — and even single-model TTA sits at
-∼39–40 ms. We therefore report **0.709 as an offline figure and 0.692 as the
+∼39–40 ms. We therefore report **0.715 as an offline figure and 0.704 as the
 real-time figure**, and benchmark the latency of the config we actually ship. The
 purely classical pipeline is real-time on DAVIS/DVX (∼5–6 ms) but exceeds budget on
 the densest EVK4 windows (∼167 ms), which is why the router sends the dense sensor
@@ -489,8 +491,8 @@ recovers recall 0.63 → 0.72 (AP 0.469 → 0.506); the residual gap to the orac
 ceiling reflects windows where the object is genuinely below the sensitivity floor,
 which would need additional faint-object training data or sensor fusion with the
 DAVIS APS grayscale channel [Capogrosso et al. 2026]. The offline max-accuracy
-configuration (0.709) exceeds the latency budget and is reported separately from the
-deployed real-time system (0.692).
+configuration (0.715) exceeds the latency budget and is reported separately from the
+deployed real-time system (0.704).
 
 **A tested distinction and one deployment direction.** (i) *Center-refinement vs.
 recall-recovery tracking.* We separately tested a constant-velocity Kalman + RTS
@@ -518,12 +520,12 @@ scenes would need revisiting.
 ## 7. Conclusion
 
 OrbitSight shows that faint, fast RSOs can be detected and tracked from raw event
-streams in **real time on CPU** (mAP 0.692, 15–38 ms/window), under a single
+streams in **real time on CPU** (mAP 0.704, 15–38 ms/window), under a single
 cross-sensor parameter set, by treating coherence rather than brightness as the
 signal and by integrating an object's track over multiple windows. A coherence-first
 classical backbone, a temporal-context CenterNet, a grid-256 head with hard-negative
 mining for dense star fields, a coasting Kalman tracker for the faint object, and a
-per-sensor router together reach mAP@0.5 of **0.692 real-time / 0.709 offline** (the
+per-sensor router together reach mAP@0.5 of **0.704 real-time / 0.715 offline** (the
 offline system crosses 0.70), a 10× gain over a classical baseline, with the largest
 improvements exactly on the dim objects that dominate the difficulty. Honest
 ablations — a cross-family study that fixes a detection-head artifact, and a DVX-lever
@@ -537,8 +539,9 @@ right way to combine these complementary strengths.
 
 ## Change-log vs. prior draft
 
-- **Headline:** 0.660/0.675 → **0.692 real-time / 0.709 offline** (offline crosses
-  0.70). DVX gains: Stars3 0.545 → 0.651, DAVIS 0.729 → 0.753, Thuraya3 0.469 → 0.506.
+- **Headline:** 0.660/0.675 → **0.704 real-time / 0.715 offline** (offline crosses
+  0.70). DVX gains: Stars3 0.545 → 0.651, DAVIS 0.729 → 0.753, Thuraya3 0.469 →
+  0.538 (100-epoch convergence + coasting); EVK4 0.859 → 0.874.
 - **New modeling:** resolution-routed grid-256 detector (§3), **online hard-negative
   mining** in the CenterNet focal loss (§5.4), and a **coasting Kalman tracker** for
   faint-object recall recovery (§5.4).
@@ -559,7 +562,7 @@ right way to combine these complementary strengths.
   post-hoc-correctable artifact. The probe is a reusable, hyperparameter-free
   diagnostic (GHOST re-purposed from OSR classification to detection FP separability).
 - **Latency (§5.7):** explicit, *measured* real-time-vs-offline split — deployed
-  15–38 ms/window (0.692) vs. offline 211 ms (0.709); the "≈ 4 ms" claim in the prior
+  15–38 ms/window (0.704) vs. offline 211 ms (0.715); the "≈ 4 ms" claim in the prior
   draft was a single grid-128 forward, not the deployed grid-192/256 config.
 - **Related work (§5.8):** added the space-domain event-vision survey and the
   frame-based edge-SOD baseline, with the "software gap → event-native" framing.

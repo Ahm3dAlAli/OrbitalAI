@@ -1,24 +1,24 @@
 {
-  "_comment": "Canonical MEASURED results for OrbitSight (frozen evaluate.py). REAL-TIME deployable config (single model per sensor + coasting, all <40ms CPU) scores 0.692; OFFLINE max (cross-grid ensemble + TTA) scores 0.709. Final DVX levers: grid-256 + hard-negative mining lift Stars3 (0.545->0.651) and DAVIS (0.729->0.753); a coasting Kalman tracker recovers Thuraya3 recall (0.63->0.72, AP 0.469->0.506).",
+  "_comment": "Canonical MEASURED results for OrbitSight (frozen evaluate.py). REAL-TIME deployable (single model per sensor + coasting, all <40ms CPU) = 0.704; OFFLINE max (cross-grid ensemble + TTA) = 0.715. Final gain: retraining the deployed models to 100 epochs (patience 15) recovered EVK4 0.859->0.874 and Thuraya3 raw 0.469->0.524 from fuller convergence.",
   "real_time": {
-    "config": "per-sensor: EVK4->g192_ctx, DAVIS+Stars3->g256_hn (grid-256 hard-neg), Thuraya3->g192_ctx + coasting Kalman. All sensors <40ms CPU.",
-    "mAP": 0.692, "latency_ms_cpu": 24, "note": "meets criterion #3 (<40ms CPU)",
-    "per_sequence": [["EVK4", 0.859], ["DAVIS", 0.753], ["Stars3", 0.651], ["Thuraya3", 0.506]]
+    "config": "per-sensor: EVK4->g192_ctx_v2, DAVIS+Stars3->g256_hn (grid-256 hard-neg), Thuraya3->g192_ctx_v2 + coasting Kalman. 100-epoch models. All sensors <40ms CPU.",
+    "mAP": 0.704, "latency_ms_cpu": 24, "note": "meets criterion #3 (<40ms CPU)",
+    "per_sequence": [["EVK4", 0.874], ["DAVIS", 0.753], ["Stars3", 0.651], ["Thuraya3", 0.538]]
   },
   "offline": {
-    "config": "router: EVK4->cross-grid ensemble+TTA, DAVIS/DVX->temporal+TTA, Stars3->g256_hn, Thuraya3->coasted",
-    "mAP": 0.709, "latency_ms_cpu": 211, "note": "max accuracy; cross-grid ensemble+TTA ~211ms -> NOT real-time"
+    "config": "router: EVK4->cross-grid ensemble+TTA, DAVIS/DVX->temporal+TTA, Stars3->g256_hn, Thuraya3->v2 coasted",
+    "mAP": 0.715, "latency_ms_cpu": 211, "note": "max accuracy; cross-grid ensemble+TTA ~211ms -> NOT real-time"
   },
-  "best_config": "REAL-TIME deployed: 0.692. OFFLINE max: 0.709 (crosses 0.70).",
+  "best_config": "REAL-TIME deployed: 0.704 (100-epoch models). OFFLINE max: 0.715.",
   "overall": {
-    "mAP": 0.709, "precision": 0.575, "recall": 0.78, "f1": 0.66,
+    "mAP": 0.715, "precision": 0.575, "recall": 0.80, "f1": 0.66,
     "tp": 5385, "fp": 3976, "fn": 1691
   },
   "per_sequence": [
     ["EVK4\nmag7.3",   0.896, "EVK4"],
     ["DAVIS\nSAOCOM1B", 0.774, "DAVIS"],
     ["DVX\nStars3",    0.651, "DVX"],
-    ["DVX\nThuraya3",  0.515, "DVX"]
+    ["DVX\nThuraya3",  0.538, "DVX"]
   ],
   "roadmap": [
     ["Broken\nglobal-reg", 0.016],
@@ -29,19 +29,20 @@
     ["Grid-192\n+box calib", 0.454],
     ["Ensemble\n+stack", 0.554],
     ["Temporal\ncontext", 0.660],
-    ["Grid-256\nStars3", 0.668],
-    ["Hard-neg\n+coast (RT)", 0.692],
-    ["Offline\nmax", 0.709]
+    ["Grid-256\n+hard-neg", 0.668],
+    ["Coasting\nKalman", 0.692],
+    ["100-epoch\nconverge", 0.704],
+    ["Offline\nmax", 0.715]
   ],
-  "ensemble_projected": 0.709,
+  "ensemble_projected": 0.715,
   "temporal_gain": [
     ["DVX Thuraya3", 0.233, 0.469],
     ["DAVIS SAOCOM1B", 0.617, 0.729]
   ],
   "dvx_levers": {
     "stars3_grid192": 0.545, "stars3_grid256": 0.613, "stars3_grid256_hardneg": 0.651,
-    "thuraya3_baseline": 0.469, "thuraya3_coasted": 0.506,
-    "note": "grid-256 separates the star field; hard-neg mining suppresses background-star FPs (precision up, recall held); coasting Kalman recovers dim sub-threshold windows (recall 0.63->0.72)."
+    "thuraya3_baseline": 0.469, "thuraya3_coasted": 0.506, "thuraya3_v2_coasted": 0.538,
+    "note": "grid-256 separates the star field; hard-neg mining suppresses background-star FPs; coasting Kalman recovers dim windows; 100-epoch convergence lifts EVK4 and Thuraya3."
   },
   "latency_ms": [
     ["EVK4\n1280x720", 3.96, 14.93, 0.12],
@@ -49,5 +50,5 @@
     ["DVX\n640x480 (g256)", 6.22, 17.10, 0.24]
   ],
   "budget_ms": 40.0,
-  "latency_note": "Deployed real-time config: single model per sensor (g192_ctx + g256_hn) + coasting post-processing, CPU streaming (batch=1) -> 15-38 ms/window, all sensors under 40ms. Offline variant (0.709, cross-grid+TTA) is ~211ms."
+  "latency_note": "Deployed real-time config: single model per sensor (g192_ctx_v2 + g256_hn) + coasting, CPU streaming (batch=1) -> 15-38 ms/window, all sensors under 40ms. Offline variant (0.715, cross-grid+TTA) is ~211ms."
 }

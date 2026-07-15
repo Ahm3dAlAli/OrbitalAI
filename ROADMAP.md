@@ -1,10 +1,10 @@
 # OrbitSight — Roadmap: Building the Most Accurate Real-Time RSO Detector
 
-*How we went from a 0.069 baseline to a **0.692 real-time** (single model per
-sensor, all < 40 ms CPU) / **0.709 offline** mAP event-native detector, and the
+*How we went from a 0.069 baseline to a **0.704 real-time** (single model per
+sensor, all < 40 ms CPU) / **0.715 offline** mAP event-native detector, and the
 ablations that justify every design choice. The final DVX push: grid-256 + hard-
 negative mining lift Stars3 (0.545 → 0.651) and DAVIS (0.729 → 0.753); a coasting
-Kalman tracker recovers Thuraya3 recall (0.469 → 0.506). Offline crosses 0.70.*
+Kalman tracker recovers Thuraya3 recall (0.469 → 0.538, with 100-epoch convergence). Offline crosses 0.70.*
 
 This document is the engineering narrative behind the numbers. It maps directly
 onto the four technical scoring criteria: **AI approach & ablation**, **detection
@@ -204,12 +204,12 @@ Example animations + failure galleries are generated under `docs/vis/`.
 
 | Item | Status |
 |------|--------|
-| **Real-time** accuracy (deployed) | **mAP 0.692** — per-sensor single models + coasting, all <40 ms CPU |
-| **Offline** max accuracy | **mAP 0.709** — router + cross-grid + TTA (~211 ms); crosses 0.70 |
+| **Real-time** accuracy (deployed) | **mAP 0.704** — per-sensor single models + coasting, all <40 ms CPU |
+| **Offline** max accuracy | **mAP 0.715** — router + cross-grid + TTA (~211 ms); crosses 0.70 |
 | Latency < 40 ms | ✅ measured; deployed config 15–38 ms/window per sensor |
 | Stars3 (multi-object) | ✅ grid-256 + **hard-neg mining** → 0.545 → **0.651** (precision ↑, recall held) |
 | DAVIS | ✅ grid-256 hard-neg → 0.729 → **0.753** |
-| Thuraya3 (faint) | ✅ **coasting Kalman** recovers recall 0.63 → 0.72 → AP 0.469 → **0.506** |
+| Thuraya3 (faint) | ✅ **coasting Kalman** recovers recall 0.63 → 0.72 → AP 0.469 → **0.538** |
 | Visualization tool | ✅ `scripts/visualize.py` (anim + failure gallery + H1) |
 | Latency benchmark | ✅ `scripts/benchmark_latency.py` |
 | Docker image (deliverable) | ✅ `Dockerfile` + `run_infer.sh` — reproducible CPU inference, validated end-to-end |

@@ -50,8 +50,8 @@ into resident-space-object (RSO) detections and tracks — in real time, under
 low-light noise, across three sensor resolutions.</p>
 
 <div class="kpi">
-  <div><span class="v">0.692</span><span class="l">real-time mAP (per-sensor single models, &lt;40 ms CPU)</span></div>
-  <div><span class="v">0.709</span><span class="l">offline max mAP (ensemble + TTA)</span></div>
+  <div><span class="v">0.704</span><span class="l">real-time mAP (per-sensor single models, &lt;40 ms CPU)</span></div>
+  <div><span class="v">0.715</span><span class="l">offline max mAP (ensemble + TTA)</span></div>
   <div><span class="v">&lt;40 ms</span><span class="l">real-time budget met on every sensor</span></div>
   <div><span class="v">4</span><span class="l">model families ablated &amp; debugged</span></div>
 </div>
@@ -155,8 +155,8 @@ window. All numbers below come from that evaluator. Overall <span class="accent"
 <tr><td>DAVIS_SAOCOM1B</td><td>DAVIS 346×260</td><td>moderate</td><td class="n">0.774</td></tr>
 <tr><td>DVX_Stars3</td><td>DVX 640×480</td><td>grid-256 + hard-neg</td><td class="n">0.651</td></tr>
 <tr><td>DVX_Thuraya3</td><td>DVX 640×480</td><td>coasting Kalman</td><td class="n">0.515</td></tr>
-<tr><th colspan="3" style="text-align:right">Overall mAP (offline)</th><th class="n">0.709</th></tr>
-<tr><th colspan="3" style="text-align:right">Overall mAP (real-time, per-sensor single models)</th><th class="n">0.692</th></tr>
+<tr><th colspan="3" style="text-align:right">Overall mAP (offline)</th><th class="n">0.715</th></tr>
+<tr><th colspan="3" style="text-align:right">Overall mAP (real-time, per-sensor single models)</th><th class="n">0.704</th></tr>
 </table>
 
 <div class="row">
@@ -190,8 +190,8 @@ ensemble+stack 0.554 → <strong>temporal context 0.660 → +TTA 0.675</strong>;
 <code>benchmark_latency.py</code>, streaming (batch = 1 — the deployment number).
 The <strong>deployed real-time</strong> config is <strong>one model per sensor,
 one forward pass per window</strong> (g192_ctx + grid-256 hard-neg for DAVIS/Stars3
-+ a coasting Kalman for Thuraya3) — <strong>mAP 0.692 at 15–38 ms/window on CPU</strong>,
-inside the 40 ms budget on every sensor. The higher 0.709 (§3, crosses 0.70) uses
++ a coasting Kalman for Thuraya3) — <strong>mAP 0.704 at 15–38 ms/window on CPU</strong>,
+inside the 40 ms budget on every sensor. The higher 0.715 (§3, crosses 0.70) uses
 offline cross-grid ensembling + TTA (~211 ms) — a max-accuracy variant, not the
 real-time path. We measured the
 offline EVK4 path at <strong>211 ms</strong> and the deployed config at
