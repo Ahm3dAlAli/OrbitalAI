@@ -324,6 +324,14 @@ never penalized. This lifts Stars3 to **0.651** (precision 0.44 → 0.49, recall
 at 0.82 — the model suppresses false stars without losing true ones) and, as a
 bonus, DAVIS to **0.753**. Multi-peak (top-k) decoding on grid-192 adds only +0.004.
 
+*Heatmap resolution has a hard latency wall.* Since grid-256 helped by resolving
+adjacent peaks, we tested a full-resolution heatmap (`hm_div=1`, 256×256 vs. the
+deployed 128×128). It **improves accuracy — DAVIS 0.753 → 0.815, Stars3 → 0.655** —
+but the extra upsampling stage over a 256×256 feature map costs **~2900 ms/window on
+CPU** (≈ 70× the budget; the forward pass, not decode), versus ~24 ms at `hm_div=2`.
+Heatmap resolution is thus a genuine accuracy lever with a **hard real-time wall**:
+`hm_div=2` is the deployable optimum, and the `hm_div=1` gain is GPU-offline only.
+
 ![DVX-lever ablation](figures/dvx_levers.png)
 
 **Table 5 — Thuraya3 (faint single object): which levers move recall.**
