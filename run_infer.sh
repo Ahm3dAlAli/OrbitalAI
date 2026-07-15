@@ -12,8 +12,9 @@
 #
 # Everything below is overridable via env vars (see docker run examples in the
 # Dockerfile header).  Defaults reproduce the deployed real-time result on CPU:
-# a single temporal model per sensor, with the Stars3 star field routed to a
-# grid-256 multi-object detector (overall mAP 0.668, all sensors < 40 ms).
+# a single temporal model per sensor (the 100-epoch g192_ctx_v2 when baked in,
+# else g192_ctx), with the Stars3 star field routed to a grid-256 multi-object
+# detector and Thuraya3 to coasting Kalman (overall mAP 0.704, all sensors < 40 ms).
 set -e
 export KMP_DUPLICATE_LIB_OK=TRUE PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-0}"
@@ -24,8 +25,13 @@ DATESTAMP="${ORBITSIGHT_DATE:-$(date +%d%m%Y)}"
 OUT="${ORBITSIGHT_OUT:-/work/${TEAM}/${DATESTAMP}}"
 DEVICE="${ORBITSIGHT_DEVICE:-cpu}"                 # cpu (portable, real-time) | cuda
 TTA="${ORBITSIGHT_TTA:---tta}"                     # set to "" to disable TTA
-# DAVIS/DVX detectors (temporal ensemble members) — space-separated checkpoints:
-MODELS="${ORBITSIGHT_MODELS:-models/g192_ctx.pt}"
+# DAVIS/DVX/EVK4 temporal detector — prefer the 100-epoch g192_ctx_v2 (real-time
+# 0.704: EVK4 0.859->0.874, Thuraya3 raw 0.469->0.524) and fall back to g192_ctx.
+if [ -z "${ORBITSIGHT_MODELS:-}" ] && [ -f models/g192_ctx_v2.pt ]; then
+    MODELS="models/g192_ctx_v2.pt"
+else
+    MODELS="${ORBITSIGHT_MODELS:-models/g192_ctx.pt}"
+fi
 # Optional distinct EVK4 detector(s) for the per-sensor router (cross-grid).
 # If unset, the DAVIS/DVX models are used for EVK4 too (single-ensemble mode).
 EVK4_MODELS="${ORBITSIGHT_EVK4_MODELS:-}"
@@ -33,7 +39,7 @@ EVK4_MODELS="${ORBITSIGHT_EVK4_MODELS:-}"
 # 0.613->0.651). If absent, those sensors keep the default detector's prediction.
 G256_MODEL="${ORBITSIGHT_G256_MODEL:-models/g256_hn.pt}"
 STARS_TOPK="${ORBITSIGHT_STARS_TOPK:-2}"
-# Thuraya3 faint object -> coasting Kalman recall recovery (0.469->0.506).
+# Thuraya3 faint object -> coasting Kalman recall recovery (raw 0.524->0.538 on v2).
 COAST="${ORBITSIGHT_COAST:-1}"; COAST_MAX="${ORBITSIGHT_COAST_MAX:-50}"
 
 mkdir -p "${OUT}"
@@ -43,7 +49,7 @@ echo "[run_infer] models=[${MODELS}] evk4=[${EVK4_MODELS:-<same>}] tta=${TTA:-of
 # Fall back to whatever temporal-ish checkpoint is present if the default is absent.
 first_present() { for m in "$@"; do [ -f "$m" ] && { echo "$m"; return; }; done; }
 if [ -z "$(first_present $MODELS)" ]; then
-    ALT="$(first_present models/g192_ctx.pt models/evt_centernet_aug.pt models/evt_centernet.pt)"
+    ALT="$(first_present models/g192_ctx_v2.pt models/g192_ctx.pt models/evt_centernet_aug.pt models/evt_centernet.pt)"
     [ -n "$ALT" ] && MODELS="$ALT" && echo "[run_infer] default model missing; using ${MODELS}"
 fi
 
