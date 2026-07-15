@@ -404,6 +404,24 @@ SAOCOM1B (0.617 → 0.729), while EVK4 (large, bright) is unaffected. This match
 oracle analysis, which places the achievable ceiling near 0.87 and attributes the
 remaining gap to detection and recall rather than box size.
 
+**The context length is unimodal, peaking at ±3 windows.** We sweep the temporal
+context (single grid-192 model, all else fixed):
+
+**Table 6 — Temporal-context sweep (single model, all four sequences).**
+
+| Context | overall mAP | Thuraya3 AP | s/epoch |
+|---|---:|---:|---:|
+| ±2 (5 windows) | 0.641 | 0.422 | ~78 |
+| **±3 (7 windows)** | **0.651** | **0.469** | ~130 |
+| ±5 (11 windows) | (DVX ↓) | 0.435 | ~170 |
+
+±2 trains ≈ 1.7× faster but loses 0.010 mAP; ±5 *degrades* the faint object
+(Thuraya3 0.469 → 0.435) — too much history dilutes the sparse signal. **±3 is the
+sweet spot**, confirming the context is a genuine optimum rather than a monotonic
+"more is better." A per-sensor nuance appears in the sweep — DAVIS/Stars3 are
+marginally better at ±2 while EVK4/Thuraya3 prefer ±3 — but the per-sensor router
+already selects each sensor's best checkpoint, so ±3 remains the shared default.
+
 ### 5.6 Qualitative results
 
 **Figure 5** overlays predicted (yellow, with confidence) and ground-truth (green)
@@ -519,6 +537,9 @@ right way to combine these complementary strengths.
 - **New ablation (Table 5):** DVX-lever study — which levers help (grid-256, hard-neg,
   local coasting) and which do not (dim-aug, reweighting, ctx±5, center-only smoothing,
   global fill), with the *local-coasting-succeeds-where-global-fit-fails* finding.
+- **Temporal-context sweep (Table 6):** ctx ±2/±3/±5 — unimodal, peaking at ±3
+  (0.641/0.651/degrades); ±2 is ~1.7× faster but −0.010 mAP, ±5 dilutes the faint
+  object. Confirms ±3 as a genuine optimum, not "more is better."
 - **State-space backbone ablation (Table 4b):** a diagonal S4D-style SSM encoder vs.
   masked attention at the deployed recipe — SSM matches val loss and trains ~1.8×
   faster (linear-time) but reaches lower AP (0.562 vs. 0.651); content-based attention
