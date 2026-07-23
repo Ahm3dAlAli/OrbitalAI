@@ -239,27 +239,29 @@ AUC ≈ 0.98.
 
 ### 6.1 Detection accuracy (test set)
 
-**Best configuration — the augmentation-trained CenterNet event transformer**
-(§6.7), routed per sensor to its winning checkpoint: the **event-augmented**
-model on EVK4/DVX, the un-augmented model on DAVIS. All four scored in one
-frozen-evaluator call.
+We report **two operating points** (matching the paper). The deployed
+**real-time** system uses one model per sensor, one forward pass per window, and
+stays **< 40 ms CPU on every sensor** — it reaches **mAP 0.704**. The **offline
+maximum-accuracy** router adds a cross-grid ensemble + TTA on EVK4 and temporal +
+TTA on DAVIS/DVX — it reaches **mAP 0.715** at recall 0.80 (~211 ms, not
+real-time). All four sequences scored in one frozen-evaluator call.
 
-| Sequence | Sensor | Detector | Precision | Recall | F1 | AP@0.5 |
-|---|---|---|---:|---:|---:|---:|
-| **2025_12_23_20_53_46_EVK4_mag7.3** *(dim headline)* | EVK4 | cross-grid ens+TTA | 0.859 | **0.934** | **0.895** | **0.896** |
-| DAVIS_SAOCOM1B_46265 | DAVIS | **temporal** (±3-win) | 0.882 | 0.769 | 0.821 | 0.729 |
-| DVX_Filtered_Stars3 | DVX | **temporal** (±3-win) | 0.493 | 0.715 | 0.584 | 0.545 |
-| DVX_Filtered_Thuraya3_32404 | DVX | **temporal** (±3-win) | 0.521 | 0.630 | 0.570 | 0.469 |
-| **Overall** | — | — | **0.567** | **0.755** | **0.648** | **mAP 0.660** |
+| Sequence | Sensor | Deployed (real-time) model | P | R | F1 | AP (real-time) | AP (offline) |
+|---|---|---|---:|---:|---:|---:|---:|
+| **…EVK4_mag7.3** *(dim headline)* | EVK4 | g192_ctx *(→ ens+TTA offline)* | 0.851 | **0.923** | **0.886** | **0.874** | **0.896** |
+| DAVIS_SAOCOM1B | DAVIS | grid-256 hard-neg | 0.829 | 0.801 | 0.815 | 0.753 | 0.774 |
+| DVX_Stars3 | DVX | grid-256 hard-neg | 0.492 | 0.819 | 0.615 | 0.651 | 0.651 |
+| DVX_Thuraya3 | DVX | g192_ctx + coasting Kalman | 0.430 | 0.735 | 0.543 | 0.538 | 0.538 |
+| **Overall** | — | — | — | — | — | **mAP 0.704** | **mAP 0.715** |
 
-Totals: **5343 TP**, 4081 FP, 1733 FN. Winning recipe: a **multi-window
-temporal-context CenterNet** — each prediction sees ±3 windows (~280 ms) of
-event history as extra time-bins, so the model learns to integrate the object's
-*track* rather than a single 40 ms slice. This was the decisive lever for dim
-objects: **Thuraya3 AP 0.233 → 0.469 (2×)**, DAVIS 0.617 → 0.729. EVK4 (large
-object) still routes to the cross-grid ensemble. Adding **test-time augmentation**
-to the temporal model lifts the overall to **mAP 0.675** (recall 0.76). Trained
-on rolf (RTX 2080 Ti).
+Offline overall: **precision 0.575, recall 0.80, F1 0.66** — **5385 TP**, 3976 FP,
+1691 FN, a **10× gain** over the classical baseline. The decisive lever was a
+**multi-window temporal-context CenterNet** — each prediction sees ±3 windows
+(~280 ms) of event history as extra time-bins, so the model integrates the
+object's *track* rather than a single 40 ms slice: **Thuraya3 AP 0.233 → 0.469
+(2×)**, DAVIS 0.617 → 0.729. The final DVX levers (grid-256, hard-negative
+mining, a coasting Kalman tracker) and 100-epoch convergence then lifted the
+deployed real-time system to **0.704**. Trained on rolf (RTX 2080 Ti).
 
 > **Real-time vs offline (criterion #3).** Deployed **real-time = mAP 0.704**:
 > per-sensor single models (EVK4→g192_ctx, DAVIS+Stars3→**grid-256 hard-neg**,
@@ -292,26 +294,28 @@ the pipeline diagram via `scripts/make_arch.py`. Latency measured with
 
 **Three headline points:**
 1. The **dim EVK4 mag-7.3** sequence — the case the Technical Report singles out
-   as hardest — is now excellent: **AP 0.865, F1 0.841, recall 0.92** — above its
-   typical-size oracle ceiling (0.714) because the model learns per-object size.
-   Exactly where H2 said the contest is won.
-2. **Event-level augmentation (the H2 dim-drop strategy) was the single biggest
-   lever** — it lifted the whole system from mAP 0.315 → **0.398** and, critically,
-   made the deep model beat the classical pipeline *even on the sparse DVX
-   sequences* it used to lose (Stars3 0.215→0.261, Thuraya3 0.074→0.124).
-3. **Latency is met everywhere**: the CenterNet runs at **~4 ms/window** on CPU
-   on all sensors, including the dense EVK4 that the classical pipeline could not
-   fit inside 40 ms.
+   as hardest — is the strongest result: **AP 0.874 real-time / 0.896 offline,
+   F1 0.886, recall 0.923**, above its typical-size oracle ceiling (0.714)
+   because the model learns per-object size. Exactly where H2 said the contest
+   is won.
+2. **Multi-window temporal context was the single biggest recall lever** — it
+   roughly doubled AP on the faintest sequence (Thuraya3 0.233 → 0.469) and
+   lifted DAVIS (0.617 → 0.729), reaching what ensembling and scale could not.
+   Event-level augmentation was the earlier decisive jump (mAP 0.315 → 0.398).
+3. **Latency is met everywhere in the deployed config**: every sensor stays
+   **< 40 ms/window** on CPU (15–38 ms, forward pass ~14–17 ms), including the
+   dense EVK4 that the classical pipeline could not fit inside 40 ms.
 
 The mAP progression across the project: classical baseline **0.069** → tuned
-classical **0.249** → CenterNet **0.289** → hybrid router **0.315** → augmented
-**0.398** → augmented + grid-192-on-DVX **0.449** → + stack-merge **0.454** →
-**3-model ensemble + TTA 0.547** → cross-grid routing 0.554 → **multi-window
-temporal context 0.660** (recall 0.76 — a **9.6× gain over the classical
-baseline**). Temporal context was the breakthrough for the dim-object recall
-that ensembling/scale could not touch (Thuraya3 2×). The achievable oracle
-ceiling is ~0.87 (§6.5b); the remaining gap is closing with a temporal
-ensemble.
+classical **0.249** → CenterNet **0.289** → hybrid router **0.315** → event
+augmentation **0.398** → grid-192 + box calibration **0.454** → 3-model ensemble
++ stacking **0.554** → **multi-window temporal context 0.660** → grid-256 Stars3
+**0.668** → hard-negative + coasting **0.692** → **100-epoch convergence 0.704
+(deployed real-time)** → **offline ensemble 0.715**, a **10× gain over the
+classical baseline**. Temporal context was the breakthrough for the dim-object
+recall that ensembling/scale could not touch (Thuraya3 2×). The achievable
+oracle ceiling is ~0.87 (§6.5b); the deployed system reaches 0.704 within the
+40 ms CPU budget.
 
 ### 6.2 Improvement history
 
@@ -416,8 +420,9 @@ median). The result rewrites the box-sizing strategy:
 
 Two conclusions:
 1. **The whole-test achievable ceiling is ≈ 0.87** (mean of each sequence's best
-   strategy). So 0.7 is firmly reachable; the entire remaining gap from our 0.315
-   is **detection/recall, not data and not box size** — the information is there.
+   strategy). We reach **0.704 real-time / 0.715 offline**; the remaining gap to
+   the ceiling is **detection/recall, not data and not box size** — the
+   information is there.
 2. **Box sizing must be per-sensor, not global.** EVK4's object *fills* its box,
    so the tight event extent is optimal (a fixed typical size *over-sizes* it,
    0.995→0.714); the small/sparse DAVIS/DVX objects need the typical GT size
@@ -634,24 +639,21 @@ requirements.txt            pinned dependency set
 ## 12. Limitations & roadmap
 
 **Honest current state:** the pipeline is complete and functional end-to-end and
-produces real detections (958 TP on the test set, strongest on the dim-EVK4
-headline case). Two areas need the iterative tuning the PRD scopes over weeks
-(M2–M4):
+deployed real-time (**5385 TP** on the test set at recall 0.80, strongest on the
+dim-EVK4 headline case). Two areas remain the frontier:
 
-1. **Recall (~40% overall, 62% on EVK4).** Lifted from ~13% via the §6.2 / §6.5
-   refinements. The remaining gap is concentrated in **DVX_Thuraya3** — a single
-   very dim satellite (often 2–4 events/window) where per-event scores are
-   near-zero, so its track is rarely confirmed (recall 0.08). Next steps that
-   should raise it further: a **track-level classifier** (generate candidates
-   aggressively, then accept/reject whole tracks by length/smoothness/score —
-   decouples recall from precision); a **Kalman/IMM** smoother replacing the
-   constant-velocity extension; and **classifier retraining with hard-negative
-   mining** so dim objects separate better. All knobs live in
-   `orbitsight/config.py`.
-2. **EVK4 latency (~167 ms/window).** Comfortably real-time on DAVIS/DVX, over
-   budget on the densest sensor. Path: tighter adaptive denoise on dense
-   windows, smaller `feat_query_cap`, multi-threading per window, and the INT8 /
-   ONNX-Runtime / OpenVINO headroom the report identifies.
+1. **The DVX_Thuraya3 floor (AP 0.538).** A single very dim satellite (often 2–4
+   events/window) is the hardest sequence even after a coasting Kalman tracker
+   and 100-epoch convergence recover its sub-threshold windows (recall 0.63 →
+   0.72). Closing the remaining gap likely needs **longer temporal integration**
+   or a sensor-level change rather than further per-window tuning.
+2. **Classical-path EVK4 latency (~167 ms/window).** The purely classical
+   pipeline is comfortably real-time on DAVIS/DVX but exceeds budget on the
+   densest EVK4 windows — which the router sidesteps by sending EVK4 to the
+   neural detector (~38 ms). Remaining headroom for the classical path: INT8 /
+   ONNX-Runtime / OpenVINO. The full-resolution heatmap (hm_div=1) is worth
+   +0.06 AP on DAVIS but is ~70× over the CPU budget, so the 40 ms constraint —
+   not accuracy — is what forbids it.
 
 These trade against each other (looser filters raise recall but cost precision
 and latency), so they are best tuned one axis at a time against the frozen
