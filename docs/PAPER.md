@@ -432,7 +432,69 @@ sweet spot**, confirming the context is a genuine optimum rather than a monotoni
 marginally better at ±2 while EVK4/Thuraya3 prefer ±3 — but the per-sensor router
 already selects each sensor's best checkpoint, so ±3 remains the shared default.
 
-### 5.6 Qualitative results
+### 5.6 Scale-free box loss (DIoU + hinge) — the near-miss lever (new)
+
+The CenterNet size head was trained with **L1 on (w, h)**, which is *scale-blind*: it
+penalizes a box at IoU 0.48 exactly like one at 0.90 whenever the absolute pixel error
+is equal. But the scoring is a hard threshold at IoU 0.5, and our objects span ~10 px
+(faint DVX) to large EVK4 — so 2 px of error is *fatal* on a small object and *free* on
+a large one. L1 spends gradient where it does not matter and starves it where it does.
+
+We replace the size L1 with a **scale-free DIoU loss plus a hinge at the scoring
+threshold**:
+
+$$\mathcal{L}_{\text{box}} = \text{base}\,(1 - \text{DIoU}) + \lambda \cdot \max(0,\ \tau + m - \text{IoU})^2,$$
+
+with $\tau = 0.5$ (the scoring threshold, *not* a free parameter), margin $m = 0.15$,
+$\lambda = 2$, base $= 0.5$. The hinge is **zero once a box clears IoU 0.65** and grows
+quadratically as the box approaches the 0.5 cliff, so gradient concentrates exactly on
+the **near-miss population** — the named failure mode. We use **DIoU** rather than plain
+IoU so gradients do not vanish for disjoint boxes early in training. The predicted box is
+assembled at the true center cell from the offset and size heads; the heatmap focal loss
+and offset L1 are unchanged. Enabled with `--iou-size` (a clean A/B against L1).
+
+**Phase A (DAVIS + Stars3).** We retrain the grid-256 hard-negative checkpoint with the
+new loss (100 ep, patience 15, identical recipe otherwise) and score it against the L1
+baseline in the same run.
+
+**Table 7 — DIoU+hinge vs. L1 size loss (real-time, same-run scoring).**
+
+| Sequence | L1 (baseline) | DIoU+hinge | Δ |
+|---|---:|---:|---:|
+| DAVIS SAOCOM1B | 0.7639 | **0.783** | **+0.019** |
+| DVX Stars3 | 0.6334 | **0.6768** | **+0.043** |
+| **2-sequence mAP** | 0.6986 | **0.7299** | **+0.031** |
+| Total TP | 4418 | **4638** | **+220** |
+| Total FN (missed) | 1113 | **893** | **−220** |
+
+Both sensors improve, recall rises on both (Stars3 0.798 → 0.841, DAVIS 0.808 → 0.818),
+and **220 near-misses cross the IoU-0.5 line** — precisely the mechanism the hinge
+targets. Stars3 gains most (+0.043), consistent with its boxes clustering hardest at the
+threshold. The gain is *additive* to the earlier DVX levers and does not touch the
+center/heatmap head.
+
+![DIoU+hinge size loss — Phase A](figures/iou_size_ab.png)
+
+**Ablation (in progress).** The loss is ablated **once** on the DAVIS+Stars3 checkpoint
+(margin/λ are properties of the loss, not the sensor); the winning configuration is then
+reused on EVK4 (Phase B). `τ` is fixed at the scoring threshold and is not swept.
+
+**Table 8 — DIoU size-loss ablation (2-sequence mAP; entries pending are training).**
+
+| Variant | τ | margin | λ | 2-seq mAP | Isolates |
+|---|---:|---:|---:|---:|---|
+| DIoU + hinge (adopted) | 0.5 | 0.15 | 2 | **0.7299** | — |
+| Pure DIoU (hinge off) | 0.5 | — | 0 | *pending* | scale-invariance vs. hinge |
+| Tighter margin | 0.5 | 0.10 | 2 | *pending* | hinge deadzone sensitivity |
+| Wider margin | 0.5 | 0.20 | 2 | *pending* | hinge deadzone sensitivity |
+
+The **pure-DIoU** row is the decisive one: if it matches the adopted config, the gain is
+attributable to *scale-invariance*; if it underperforms, the *near-miss hinge* adds real
+value on top. **Phase B (EVK4)** retrains `g192_ctx_v2` with the winning configuration; a
+full four-sequence re-score with the adopted DAVIS+Stars3 model is projected to lift the
+deployed real-time mAP from 0.704 toward ~0.72 (pending measurement).
+
+### 5.7 Qualitative results
 
 **Figure 5** overlays predicted (yellow, with confidence) and ground-truth (green)
 boxes across sensors, from the bright EVK4 object to the faint DVX/Thuraya3 target,
@@ -442,7 +504,7 @@ low-IoU windows), an (x, y, t) coherence view, and an **analyst diagnostics pane
 (event-rate spatial heatmap, per-window event rate as an SNR proxy, and
 confidence/matched-IoU distributions over time) for operational interpretation.
 
-### 5.7 Latency: real-time vs. offline, measured
+### 5.8 Latency: real-time vs. offline, measured
 
 We measure per-window streaming latency (batch 1, CPU) for both configurations.
 
@@ -568,3 +630,8 @@ right way to combine these complementary strengths.
   frame-based edge-SOD baseline, with the "software gap → event-native" framing.
 - **Contributions/abstract:** rewritten to state the real-time/offline separation and
   the two ablations.
+- **Scale-free box loss (§5.6, new):** replaced L1 on (w,h) with a DIoU + hinge size
+  loss (τ=0.5, m=0.15, λ=2). Phase A (DAVIS+Stars3) is a clean win — DAVIS 0.764→0.783,
+  Stars3 0.633→0.677, 2-seq mAP 0.699→0.730 (+0.031), 220 near-misses recovered. Loss
+  ablation (pure-DIoU / margin sweep) and Phase B (EVK4) in progress; a full 4-seq
+  re-score is projected to lift the deployed real-time mAP toward ~0.72.

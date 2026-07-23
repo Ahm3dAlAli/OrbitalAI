@@ -90,8 +90,39 @@ def fig_ssm():
     save(fig, "ssm_vs_attn.png")
 
 
+# 4 — DIoU+hinge size loss: Phase-A A/B (L1 vs DIoU) ----------------------- #
+def fig_iou_size():
+    # Measured Phase-A A/B on the g256_hn (DAVIS+Stars3) checkpoint, same-run scoring.
+    seqs = ["DAVIS", "Stars3", "2-seq mAP"]
+    l1   = [0.7639, 0.6334, 0.6986]
+    diou = [0.7830, 0.6768, 0.7299]
+    x = np.arange(len(seqs)); w = 0.36
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4.4), gridspec_kw={"width_ratios": [1.5, 1]})
+    a1.bar(x - w/2, l1,   w, label="L1 size loss (baseline)", color=GREY, zorder=3)
+    a1.bar(x + w/2, diou, w, label="DIoU + hinge (ours)",     color=CYAN, zorder=3)
+    for i in range(len(seqs)):
+        a1.text(x[i] - w/2, l1[i]   + 0.008, f"{l1[i]:.3f}",   ha="center", fontsize=8.5, color=NAVY)
+        a1.text(x[i] + w/2, diou[i] + 0.008, f"{diou[i]:.3f}", ha="center", fontsize=8.5, fontweight="bold", color=NAVY)
+        a1.annotate(f"+{diou[i]-l1[i]:.3f}", (x[i], max(l1[i], diou[i]) + 0.03),
+                    ha="center", fontsize=8.5, color="#147d72", fontweight="bold")
+    a1.set_xticks(x); a1.set_xticklabels(seqs)
+    a1.set_ylim(0, 0.9); a1.set_ylabel("AP @ IoU 0.5")
+    a1.set_title("Scale-free DIoU+hinge size loss — Phase A (DAVIS+Stars3)",
+                 fontweight="bold", color=NAVY); a1.legend(fontsize=8.5, loc="upper right")
+    # TP recovered / FN removed — the near-miss population crossing IoU 0.5
+    a2.bar(["TP", "FN"], [4418, 1113], w+0.1, label="L1",   color=GREY, zorder=3)
+    a2.bar([0.36, 1.36], [4638, 893],  w+0.1, label="DIoU", color=CYAN, zorder=3)
+    a2.text(0.18, 4700, "+220", ha="center", fontsize=9, color="#147d72", fontweight="bold")
+    a2.text(1.18, 1200, "−220", ha="center", fontsize=9, color="#147d72", fontweight="bold")
+    a2.set_xticks([0.18, 1.18]); a2.set_xticklabels(["True pos.", "Missed (FN)"])
+    a2.set_ylabel("count"); a2.set_title("220 near-misses cross the\nIoU 0.5 cliff", fontweight="bold", color=NAVY)
+    a2.legend(fontsize=8.5)
+    save(fig, "iou_size_ab.png")
+
+
 if __name__ == "__main__":
     fig_dvx_levers()
     fig_coast_age()
     fig_ssm()
+    fig_iou_size()
     print(f"\nAll ablation figures -> {OUT}")

@@ -44,6 +44,28 @@
     "thuraya3_baseline": 0.469, "thuraya3_coasted": 0.506, "thuraya3_v2_coasted": 0.538,
     "note": "grid-256 separates the star field; hard-neg mining suppresses background-star FPs; coasting Kalman recovers dim windows; 100-epoch convergence lifts EVK4 and Thuraya3."
   },
+  "diou_size_loss": {
+    "note": "Scale-free DIoU + hinge box loss on the CenterNet size head, replacing L1 on (w,h). L_box = base*(1-DIoU) + lambda*max(0, tau+margin-IoU)^2, tau=0.5, margin=0.15, lambda=2, base=0.5. Hinge concentrates gradient on the IoU>=0.5 near-miss cliff; DIoU keeps gradient non-vanishing for disjoint boxes. Enabled with --iou-size.",
+    "params": {"tau": 0.5, "margin": 0.15, "lambda": 2.0, "base": 0.5},
+    "phase_a": {
+      "config": "g256_hn recipe (grid-256, hard-neg 2.0, 100ep/patience15) + --iou-size; A/B vs L1 g256_hn_v2, same-run scoring on DAVIS+Stars3",
+      "davis":  {"l1": 0.7639, "diou": 0.783,  "delta": 0.019},
+      "stars3": {"l1": 0.6334, "diou": 0.6768, "delta": 0.043},
+      "two_seq_map": {"l1": 0.6986, "diou": 0.7299, "delta": 0.031},
+      "tp": {"l1": 4418, "diou": 4638}, "fn": {"l1": 1113, "diou": 893},
+      "verdict": "clean win; both sensors up, recall up (Stars3 0.798->0.841, DAVIS 0.808->0.818), 220 near-misses cross IoU 0.5. Adopt g256_hn_iou.pt."
+    },
+    "ablation": {
+      "_comment": "margin/lambda sweep on the g256_hn DAVIS+Stars3 checkpoint (2-seq mAP). Ablation is on the LOSS, run once here, not per-sensor. m15/lam2 measured; others training on rolf.",
+      "metric": "2-seq mAP (DAVIS+Stars3)",
+      "m15_lam2_diou_hinge": 0.7299,
+      "l0_pure_diou": null,
+      "m10_lam2": null,
+      "m20_lam2": null
+    },
+    "phase_b_evk4": {"status": "pending", "note": "g192_ctx_v2 + --iou-size (g192_ctx_iou.pt); apply the winning ablation config"},
+    "full_rescore_projected": {"note": "4-seq deployed pipeline with g256_hn_iou swapped in; projected ~0.72 overall (up from 0.704), pending measured re-score"}
+  },
   "latency_ms": [
     ["EVK4\n1280x720", 3.96, 14.93, 0.12],
     ["DAVIS\n346x260 (g256)", 6.22, 17.10, 0.24],
