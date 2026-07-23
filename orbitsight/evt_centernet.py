@@ -131,9 +131,11 @@ def draw_gaussian(hm, cx, cy, radius):
     np.maximum(masked, gm, out=masked)
 
 
-def build_targets(boxes_has, hm_size):
+def build_targets(boxes_has, hm_size, min_radius=1):
     """boxes_has: list of (has, cx, cy, w, h) normalized.  Returns batched
-    heatmap, wh, offset, ind(center flat idx), reg_mask."""
+    heatmap, wh, offset, ind(center flat idx), reg_mask.  min_radius floors the
+    Gaussian splat radius: the 0.3*max(w,h) formula collapses to ~1 cell for a
+    ~10 px object, giving almost no positive signal; a floor of 2-3 restores it."""
     B = len(boxes_has)
     hm = np.zeros((B, 1, hm_size, hm_size), np.float32)
     wh = np.zeros((B, 2), np.float32)
@@ -145,7 +147,7 @@ def build_targets(boxes_has, hm_size):
             continue
         fcx, fcy = cx * hm_size, cy * hm_size
         icx, icy = int(min(fcx, hm_size - 1)), int(min(fcy, hm_size - 1))
-        radius = max(1, int(0.3 * max(w, h) * hm_size))
+        radius = max(min_radius, int(0.3 * max(w, h) * hm_size))
         draw_gaussian(hm[i, 0], icx, icy, radius)
         wh[i] = (w, h)
         off[i] = (fcx - icx, fcy - icy)

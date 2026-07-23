@@ -48,7 +48,7 @@ def _split_items(items, val_frac, seed):
 
 
 def _run_epoch(model, dl, hm_size, device, opt=None, hard_neg=0.0, iou_size=False,
-               iou_margin=0.15, iou_lambda=2.0):
+               iou_margin=0.15, iou_lambda=2.0, min_radius=1):
     train = opt is not None
     model.train(train)
     tot = lh = 0.0; nb = 0
@@ -56,7 +56,7 @@ def _run_epoch(model, dl, hm_size, device, opt=None, hard_neg=0.0, iou_size=Fals
     with ctx:
         for vox, has, gt in dl:
             boxes = [(float(has[i]), *gt[i].tolist()) for i in range(len(has))]
-            tgt = [t.to(device) for t in build_targets(boxes, hm_size)]
+            tgt = [t.to(device) for t in build_targets(boxes, hm_size, min_radius=min_radius)]
             vox = vox.to(device, non_blocking=True)
             if train:
                 opt.zero_grad()
@@ -133,6 +133,11 @@ def main():
                     help="hinge weight for --iou-size (0 = pure DIoU, no near-miss "
                          "hinge — isolates scale-invariance from boundary focus). "
                          "Requires --iou-size.")
+    ap.add_argument("--min-radius", type=int, default=1,
+                    help="floor for the heatmap Gaussian splat radius (cells). The "
+                         "0.3*max(w,h) formula collapses to ~1 cell for a ~10 px object, "
+                         "giving almost no positive signal; try 2-3 for small objects. "
+                         "1 = current behavior.")
     args = ap.parse_args()
 
     device = (("cuda" if torch.cuda.is_available() else "cpu")
@@ -197,7 +202,8 @@ def main():
                              "davis": args.davis_weight, "dim": args.dim_weight,
                              "dim_aug": bool(args.dim_aug), "hard_neg": args.hard_neg},
                 "iou_size": bool(args.iou_size),
-                "iou_margin": args.iou_margin, "iou_lambda": args.iou_lambda}
+                "iou_margin": args.iou_margin, "iou_lambda": args.iou_lambda,
+                "min_radius": args.min_radius}
     if args.hard_neg > 0:
         print(f"[hard-neg] online mining, focal upweight ×{args.hard_neg} on "
               "high-confidence strict-background cells")
@@ -205,6 +211,9 @@ def main():
         print(f"[iou-size] scale-free DIoU + hinge box loss (tau=0.5, margin={args.iou_margin}, "
               f"lambda={args.iou_lambda}, base=0.5) replacing L1 on (w,h) — "
               + ("pure DIoU (hinge off)" if args.iou_lambda == 0 else "gradient on the near-miss cliff"))
+    if args.min_radius > 1:
+        print(f"[min-radius] heatmap Gaussian splat radius floored at {args.min_radius} "
+              "cells (restores positive signal for small objects)")
     if args.dim_aug:
         print("[dim-aug] aggressive event-drop (keep 10-100%), noise 0.5 — "
               "synthesizing the 2-5 event dim regime")
@@ -214,10 +223,12 @@ def main():
         t0 = time.perf_counter()
         tr_loss, tr_hm = _run_epoch(model, dl, hm_size, device, opt,
                                     hard_neg=args.hard_neg, iou_size=args.iou_size,
-                                    iou_margin=args.iou_margin, iou_lambda=args.iou_lambda)
+                                    iou_margin=args.iou_margin, iou_lambda=args.iou_lambda,
+                                    min_radius=args.min_radius)
         va_loss, va_hm = _run_epoch(model, vdl, hm_size, device, opt=None,
                                     iou_size=args.iou_size,
-                                    iou_margin=args.iou_margin, iou_lambda=args.iou_lambda)
+                                    iou_margin=args.iou_margin, iou_lambda=args.iou_lambda,
+                                    min_radius=args.min_radius)
         sched.step()
         improved = va_loss < best_val - 1e-4
         if improved:
