@@ -189,15 +189,62 @@ def _gather(feat, ind):
     return feat.gather(2, ind).squeeze(-1)
 
 
-def centernet_loss(hm, wh, off, tgt, w_hm=1.0, w_wh=1.0, w_off=1.0, hard_neg_w=0.0):
+def _diou_hinge_size_loss(pwh, poff, twh, toff, mask, hm_size,
+                          tau=0.5, margin=0.15, lam=2.0, base_w=0.5):
+    """Scale-free box loss for the size head. Assembles the predicted and GT box
+    at the (shared) true center cell -- center = offset/hm_size (the cell index
+    cancels), size = (w,h) in normalized units -- and returns
+
+        base_w * (1 - DIoU) + lam * hinge(tau + margin - IoU)^2
+
+    averaged over the object cells. The DIoU base gives non-vanishing gradient for
+    disjoint boxes; the hinge is zero once IoU clears tau+margin (=0.65) and grows
+    quadratically as a box approaches the IoU>=0.5 scoring cliff, so gradient
+    concentrates on the near-miss population -- the named failure mode. Unlike L1
+    on (w,h), this is scale-invariant: 2 px of error on a 10 px object is penalized
+    like 2 px is fatal, not like it is free."""
+    eps = 1e-7
+    # center (normalized) -- shared cell index cancels between pred and GT.
+    pcx, pcy = poff[:, 0] / hm_size, poff[:, 1] / hm_size
+    gcx, gcy = toff[:, 0] / hm_size, toff[:, 1] / hm_size
+    pw, ph = pwh[:, 0].clamp_min(eps), pwh[:, 1].clamp_min(eps)
+    gw, gh = twh[:, 0].clamp_min(eps), twh[:, 1].clamp_min(eps)
+    px1, py1, px2, py2 = pcx - pw / 2, pcy - ph / 2, pcx + pw / 2, pcy + ph / 2
+    gx1, gy1, gx2, gy2 = gcx - gw / 2, gcy - gh / 2, gcx + gw / 2, gcy + gh / 2
+    iw = (torch.min(px2, gx2) - torch.max(px1, gx1)).clamp_min(0)
+    ih = (torch.min(py2, gy2) - torch.max(py1, gy1)).clamp_min(0)
+    inter = iw * ih
+    union = pw * ph + gw * gh - inter + eps
+    iou = inter / union
+    # smallest enclosing box diagonal (DIoU penalty) + center distance.
+    cw = torch.max(px2, gx2) - torch.min(px1, gx1)
+    ch = torch.max(py2, gy2) - torch.min(py1, gy1)
+    c2 = cw * cw + ch * ch + eps
+    rho2 = (pcx - gcx) ** 2 + (pcy - gcy) ** 2
+    diou = iou - rho2 / c2
+    hinge = torch.clamp(tau + margin - iou, min=0) ** 2
+    per = base_w * (1 - diou) + lam * hinge
+    return (per * mask).sum() / mask.sum().clamp_min(1)
+
+
+def centernet_loss(hm, wh, off, tgt, w_hm=1.0, w_wh=1.0, w_off=1.0, hard_neg_w=0.0,
+                   iou_size=False, w_iou=1.0, iou_tau=0.5, iou_margin=0.15,
+                   iou_lambda=2.0, iou_base=0.5):
     thm, twh, toff, ind, mask = tgt
     lhm = focal_hm_loss(torch.sigmoid(hm), thm, hard_neg_w=hard_neg_w)
     m = mask.unsqueeze(1)
     pwh = _gather(wh, ind)
     poff = _gather(off, ind)
     n = mask.sum().clamp_min(1)
-    lwh = (F.l1_loss(pwh * m, twh * m, reduction="sum") / n)
     loff = (F.l1_loss(poff * m, toff * m, reduction="sum") / n)
+    if iou_size:
+        # Scale-free DIoU + hinge on the size head (A/B against L1 via --iou-size).
+        hm_size = wh.shape[-1]
+        lbox = _diou_hinge_size_loss(pwh, poff, twh, toff, mask, hm_size,
+                                     tau=iou_tau, margin=iou_margin,
+                                     lam=iou_lambda, base_w=iou_base)
+        return w_hm * lhm + w_iou * lbox + w_off * loff, lhm.item()
+    lwh = (F.l1_loss(pwh * m, twh * m, reduction="sum") / n)
     return w_hm * lhm + w_wh * lwh + w_off * loff, lhm.item()
 
 

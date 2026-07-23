@@ -47,7 +47,7 @@ def _split_items(items, val_frac, seed):
     return train, val
 
 
-def _run_epoch(model, dl, hm_size, device, opt=None, hard_neg=0.0):
+def _run_epoch(model, dl, hm_size, device, opt=None, hard_neg=0.0, iou_size=False):
     train = opt is not None
     model.train(train)
     tot = lh = 0.0; nb = 0
@@ -62,7 +62,8 @@ def _run_epoch(model, dl, hm_size, device, opt=None, hard_neg=0.0):
             hm, wh, off = model(vox)
             # hard-negative mining only during training (clean val loss)
             loss, l_hm = centernet_loss(hm, wh, off, tgt,
-                                        hard_neg_w=hard_neg if train else 0.0)
+                                        hard_neg_w=hard_neg if train else 0.0,
+                                        iou_size=iou_size)
             if train:
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -118,6 +119,11 @@ def main():
                          "on high-confidence STRICT-background cells (suppresses FPs "
                          "like Stars3 background stars). Try 1.5-2.0; 0=off. Pair with "
                          "--dvx-weight so the mining targets the noisy DVX field.")
+    ap.add_argument("--iou-size", action="store_true",
+                    help="replace the L1 size loss with a scale-free DIoU + hinge box "
+                         "loss (hinge concentrates gradient on the IoU>=0.5 near-miss "
+                         "cliff). A/B against L1; helps sensors whose boxes cluster near "
+                         "the 0.5 threshold (DAVIS/Stars3). Off by default.")
     args = ap.parse_args()
 
     device = (("cuda" if torch.cuda.is_available() else "cpu")
@@ -180,10 +186,14 @@ def main():
                 "enc_layers": args.enc_layers, "context": args.context,
                 "reweight": {"dvx": args.dvx_weight, "evk4": args.evk4_weight,
                              "davis": args.davis_weight, "dim": args.dim_weight,
-                             "dim_aug": bool(args.dim_aug), "hard_neg": args.hard_neg}}
+                             "dim_aug": bool(args.dim_aug), "hard_neg": args.hard_neg},
+                "iou_size": bool(args.iou_size)}
     if args.hard_neg > 0:
         print(f"[hard-neg] online mining, focal upweight ×{args.hard_neg} on "
               "high-confidence strict-background cells")
+    if args.iou_size:
+        print("[iou-size] scale-free DIoU + hinge box loss (tau=0.5, margin=0.15, "
+              "lambda=2, base=0.5) replacing L1 on (w,h) — gradient on the near-miss cliff")
     if args.dim_aug:
         print("[dim-aug] aggressive event-drop (keep 10-100%), noise 0.5 — "
               "synthesizing the 2-5 event dim regime")
@@ -191,8 +201,10 @@ def main():
 
     for ep in range(args.epochs):
         t0 = time.perf_counter()
-        tr_loss, tr_hm = _run_epoch(model, dl, hm_size, device, opt, hard_neg=args.hard_neg)
-        va_loss, va_hm = _run_epoch(model, vdl, hm_size, device, opt=None)
+        tr_loss, tr_hm = _run_epoch(model, dl, hm_size, device, opt,
+                                    hard_neg=args.hard_neg, iou_size=args.iou_size)
+        va_loss, va_hm = _run_epoch(model, vdl, hm_size, device, opt=None,
+                                    iou_size=args.iou_size)
         sched.step()
         improved = va_loss < best_val - 1e-4
         if improved:
