@@ -56,12 +56,19 @@
       "verdict": "clean win; both sensors up, recall up (Stars3 0.798->0.841, DAVIS 0.808->0.818), 220 near-misses cross IoU 0.5. Adopt g256_hn_iou.pt."
     },
     "ablation": {
-      "_comment": "margin/lambda sweep on the g256_hn DAVIS+Stars3 checkpoint (2-seq mAP). Ablation is on the LOSS, run once here, not per-sensor. m15/lam2 measured; others training on rolf.",
+      "_comment": "margin/lambda sweep on the g256_hn DAVIS+Stars3 checkpoint (measured 2-seq mAP). Ablation is on the LOSS, run once here, not per-sensor. Margin unimodal peak at 0.15; pure DIoU (l0) is worst -> the hinge adds value on top of scale-invariance.",
       "metric": "2-seq mAP (DAVIS+Stars3)",
       "m15_lam2_diou_hinge": 0.7299,
-      "l0_pure_diou": null,
-      "m10_lam2": null,
-      "m20_lam2": null
+      "m10_lam2": 0.7276,
+      "m20_lam2": 0.7252,
+      "l0_pure_diou": 0.7221
+    },
+    "related_levers_rejected_davis_stars3": {
+      "_comment": "stacked on the DIoU winner; both HURT DAVIS+Stars3 (crowded field / off-bulk focus). Retained as flags, re-tested on Thuraya3 (Batch 2, opposite regime).",
+      "metric": "2-seq mAP (DAVIS+Stars3)",
+      "baseline_m15": 0.7299,
+      "min_radius_3": 0.6969,
+      "dim_weight_0p5": 0.6673
     },
     "phase_b_evk4": {"status": "pending", "note": "g192_ctx_v2 + --iou-size (g192_ctx_iou.pt); apply the winning ablation config"},
     "full_rescore_projected": {"note": "4-seq deployed pipeline with g256_hn_iou swapped in; projected ~0.72 overall (up from 0.704), pending measured re-score"}

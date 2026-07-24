@@ -475,24 +475,42 @@ center/heatmap head.
 
 ![DIoU+hinge size loss — Phase A](figures/iou_size_ab.png)
 
-**Ablation (in progress).** The loss is ablated **once** on the DAVIS+Stars3 checkpoint
-(margin/λ are properties of the loss, not the sensor); the winning configuration is then
-reused on EVK4 (Phase B). `τ` is fixed at the scoring threshold and is not swept.
+**Ablation.** The loss is ablated **once** on the DAVIS+Stars3 checkpoint (margin/λ are
+properties of the loss, not the sensor); the winning configuration is then reused on EVK4
+(Phase B). `τ` is fixed at the scoring threshold and is not swept. Each variant is a
+full 100-epoch retrain scored with the frozen evaluator on DAVIS+Stars3.
 
-**Table 8 — DIoU size-loss ablation (2-sequence mAP; entries pending are training).**
+**Table 8 — DIoU size-loss ablation (measured 2-sequence mAP, DAVIS+Stars3).**
 
-| Variant | τ | margin | λ | 2-seq mAP | Isolates |
-|---|---:|---:|---:|---:|---|
-| DIoU + hinge (adopted) | 0.5 | 0.15 | 2 | **0.7299** | — |
-| Pure DIoU (hinge off) | 0.5 | — | 0 | *pending* | scale-invariance vs. hinge |
-| Tighter margin | 0.5 | 0.10 | 2 | *pending* | hinge deadzone sensitivity |
-| Wider margin | 0.5 | 0.20 | 2 | *pending* | hinge deadzone sensitivity |
+| Variant | τ | margin | λ | 2-seq mAP | Δ vs. adopted |
+|---|---:|---:|---:|---:|---:|
+| **DIoU + hinge (adopted)** | 0.5 | **0.15** | 2 | **0.7299** | — |
+| Tighter margin | 0.5 | 0.10 | 2 | 0.7276 | −0.0023 |
+| Wider margin | 0.5 | 0.20 | 2 | 0.7252 | −0.0047 |
+| Pure DIoU (hinge off) | 0.5 | — | 0 | 0.7221 | −0.0078 |
 
-The **pure-DIoU** row is the decisive one: if it matches the adopted config, the gain is
-attributable to *scale-invariance*; if it underperforms, the *near-miss hinge* adds real
-value on top. **Phase B (EVK4)** retrains `g192_ctx_v2` with the winning configuration; a
-full four-sequence re-score with the adopted DAVIS+Stars3 model is projected to lift the
-deployed real-time mAP from 0.704 toward ~0.72 (pending measurement).
+Two clean results. **(i) The margin is unimodal, peaking at 0.15** (0.7299 > 0.10:0.7276 >
+0.20:0.7252) — the adopted default is the optimum, not a lucky pick. **(ii) Pure DIoU is
+the *worst* variant** (0.7221, −0.0078): removing the hinge costs more than mistuning the
+margin, so the near-miss hinge contributes real value *on top of* scale-invariance — the
+gain is not attributable to DIoU alone. Both the scale-free loss and the boundary hinge
+matter, with `m = 0.15` the sweet spot.
+
+**Two related levers, rejected on DAVIS+Stars3.** We also tested, stacked on the DIoU
+winner, (a) a **heatmap Gaussian-radius floor** (`--min-radius 3`: the `0.3·max(w,h)`
+formula collapses to ~1 cell for a ~10 px object, giving 9 support cells; a floor of 3
+gives 37) and (b) **event-count difficulty weighting** (`--dim-weight 0.5`: window sample
+weight ∝ `1/√n_events`). Both *hurt* here — min-radius **0.697** (−0.033), dim-weight
+**0.667** (−0.063) — because Stars3 is a *crowded* field (enlarged Gaussians bleed
+adjacent peaks together) and up-weighting the sparsest windows pulls capacity off the bulk
+the model is scored on. They are retained as flags and re-tested on Thuraya3 (Batch 2),
+whose *single isolated faint* object is the opposite regime and lacks both failure modes.
+
+**Phase B (EVK4 + Thuraya3)** retrains `g192_ctx_v2` with `--iou-size` (and separately
+`--min-radius 3` / `--dim-weight 0.5`), scored on Thuraya3 (raw + coasted) and EVK4; the
+per-sensor router adopts each lever only where it wins. A full four-sequence re-score with
+the adopted DAVIS+Stars3 model (`g256_hn_iou`) is projected to lift the deployed real-time
+mAP from 0.704 toward ~0.72 (measurement pending).
 
 ### 5.7 Qualitative results
 
@@ -632,6 +650,9 @@ right way to combine these complementary strengths.
   the two ablations.
 - **Scale-free box loss (§5.6, new):** replaced L1 on (w,h) with a DIoU + hinge size
   loss (τ=0.5, m=0.15, λ=2). Phase A (DAVIS+Stars3) is a clean win — DAVIS 0.764→0.783,
-  Stars3 0.633→0.677, 2-seq mAP 0.699→0.730 (+0.031), 220 near-misses recovered. Loss
-  ablation (pure-DIoU / margin sweep) and Phase B (EVK4) in progress; a full 4-seq
-  re-score is projected to lift the deployed real-time mAP toward ~0.72.
+  Stars3 0.633→0.677, 2-seq mAP 0.699→0.730 (+0.031), 220 near-misses recovered. **Loss
+  ablation (Table 8) complete:** margin unimodal at 0.15 (0.7299 > 0.10:0.7276 >
+  0.20:0.7252), and pure-DIoU is worst (0.7221) — the hinge adds value on top of
+  scale-invariance. Two related levers (heatmap radius floor, event-count weighting) both
+  hurt DAVIS+Stars3 and are re-tested on Thuraya3 (Batch 2). Phase B (EVK4+Thuraya3) and a
+  full 4-seq re-score pending; the latter projected to lift real-time mAP toward ~0.72.
