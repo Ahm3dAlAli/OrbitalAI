@@ -25,8 +25,9 @@ declare -A CK=(
 )
 ORDER=(m15_baseline l0_pureDIoU m10 m20 r3_minradius dw_dimweight)
 
-ap_of() {  # $1=metrics dir, $2=grep token -> prints AP (last numeric col)
-    grep -E "$2" "$1/eval.txt" 2>/dev/null | tail -1 | awk -F'|' '{gsub(/ /,"",$NF); print $NF}'
+ap_of() {  # $1=metrics dir, $2=grep token -> prints AP (last numeric col before the
+           # trailing pipe; the row ends with "| ... | AP |", so AP is field NF-1)
+    grep -E "$2" "$1/eval.txt" 2>/dev/null | tail -1 | awk -F'|' '{gsub(/ /,"",$(NF-1)); print $(NF-1)}'
 }
 
 printf "\n%-16s | %8s | %8s | %9s\n" "variant" "DAVIS" "Stars3" "2-seq mAP"
