@@ -1,6 +1,6 @@
 # OrbitSight — Roadmap: Building the Most Accurate Real-Time RSO Detector
 
-*How we went from a 0.069 baseline to a **0.704 real-time** (single model per
+*How we went from a 0.069 baseline to a **0.719 real-time** (single model per
 sensor, all < 40 ms CPU) / **0.715 offline** mAP event-native detector, and the
 ablations that justify every design choice. The final DVX push: grid-256 + hard-
 negative mining lift Stars3 (0.545 → 0.651) and DAVIS (0.729 → 0.753); a coasting
@@ -204,7 +204,7 @@ Example animations + failure galleries are generated under `docs/vis/`.
 
 | Item | Status |
 |------|--------|
-| **Real-time** accuracy (deployed) | **mAP 0.704** — per-sensor single models + coasting, all <40 ms CPU |
+| **Real-time** accuracy (deployed) | **mAP 0.719** — per-sensor single models + coasting, all <40 ms CPU |
 | **Offline** max accuracy | **mAP 0.715** — router + cross-grid + TTA (~211 ms); crosses 0.70 |
 | Latency < 40 ms | ✅ measured; deployed config 15–38 ms/window per sensor |
 | Stars3 (multi-object) | ✅ grid-256 + **hard-neg mining** → 0.545 → **0.651** (precision ↑, recall held) |

@@ -241,37 +241,38 @@ AUC ≈ 0.98.
 
 We report **two operating points** (matching the paper). The deployed
 **real-time** system uses one model per sensor, one forward pass per window, and
-stays **< 40 ms CPU on every sensor** — it reaches **mAP 0.704**. The **offline
+stays **< 40 ms CPU on every sensor** — it reaches **mAP 0.719**. The **offline
 maximum-accuracy** router adds a cross-grid ensemble + TTA on EVK4 and temporal +
 TTA on DAVIS/DVX — it reaches **mAP 0.715** at recall 0.80 (~211 ms, not
 real-time). All four sequences scored in one frozen-evaluator call.
 
 | Sequence | Sensor | Deployed (real-time) model | P | R | F1 | AP (real-time) | AP (offline) |
 |---|---|---|---:|---:|---:|---:|---:|
-| **…EVK4_mag7.3** *(dim headline)* | EVK4 | g192_ctx *(→ ens+TTA offline)* | 0.851 | **0.923** | **0.886** | **0.874** | **0.896** |
-| DAVIS_SAOCOM1B | DAVIS | grid-256 hard-neg | 0.829 | 0.801 | 0.815 | 0.753 | 0.774 |
-| DVX_Stars3 | DVX | grid-256 hard-neg | 0.492 | 0.819 | 0.615 | 0.651 | 0.651 |
-| DVX_Thuraya3 | DVX | g192_ctx + coasting Kalman | 0.430 | 0.735 | 0.543 | 0.538 | 0.538 |
-| **Overall** | — | — | — | — | — | **mAP 0.704** | **mAP 0.715** |
+| **…EVK4_mag7.3** *(dim headline)* | EVK4 | g192_ctx *(→ ens+TTA offline)* | 0.855 | **0.925** | **0.889** | **0.881** | **0.896** |
+| DAVIS_SAOCOM1B | DAVIS | grid-256 hard-neg **+ DIoU** | 0.807 | 0.818 | 0.812 | **0.783** | 0.774 |
+| DVX_Stars3 | DVX | grid-256 hard-neg **+ DIoU** | 0.501 | 0.841 | 0.628 | **0.677** | 0.651 |
+| DVX_Thuraya3 | DVX | g192_ctx + coasting Kalman | 0.433 | 0.723 | 0.542 | 0.534 | 0.538 |
+| **Overall** | — | — | — | — | — | **mAP 0.719** | **mAP 0.715** |
 
-Offline overall: **precision 0.575, recall 0.80, F1 0.66** — **5385 TP**, 3976 FP,
-1691 FN, a **10× gain** over the classical baseline. The decisive lever was a
+Real-time overall: **precision 0.559, recall 0.849, F1 0.674** — **6011 TP**, 4748 FP,
+1065 FN, a **10× gain** over the classical baseline. The decisive lever was a
 **multi-window temporal-context CenterNet** — each prediction sees ±3 windows
 (~280 ms) of event history as extra time-bins, so the model integrates the
 object's *track* rather than a single 40 ms slice: **Thuraya3 AP 0.233 → 0.469
 (2×)**, DAVIS 0.617 → 0.729. The final DVX levers (grid-256, hard-negative
 mining, a coasting Kalman tracker) and 100-epoch convergence then lifted the
-deployed real-time system to **0.704**. Trained on rolf (RTX 2080 Ti).
+deployed real-time system to **0.719**. Trained on rolf (RTX 2080 Ti).
 
-> **Real-time vs offline (criterion #3).** Deployed **real-time = mAP 0.704**:
+> **Real-time vs offline (criterion #3).** Deployed **real-time = mAP 0.719**:
 > per-sensor single models (EVK4→g192_ctx, DAVIS+Stars3→**grid-256 hard-neg**,
 > Thuraya3→g192_ctx **+ coasting Kalman**), every sensor **< 40 ms/window CPU**
 > (15–38 ms). Offline **max = 0.715** (crosses 0.70) adds cross-grid ensembling +
 > TTA (~211 ms, not real-time). Final DVX levers: **grid-256** separates the Stars3
 > star field (0.545→0.613); **hard-negative mining** suppresses background-star FPs
 > (→0.651, and DAVIS 0.729→0.753); **100-epoch convergence + a coasting Kalman
-> tracker** recover Thuraya3 recall (AP 0.469→**0.538**) and EVK4 (0.859→**0.874**).
-> Report both: **0.704 real-time / 0.715 offline.**
+> tracker** recover Thuraya3 recall (AP 0.469→**0.538**) and EVK4 (0.859→**0.874**);
+> a **scale-free DIoU+hinge size loss** then lifts DAVIS 0.753→**0.783** and Stars3
+> 0.651→**0.677** — the 0.704→**0.719** gain. Report both: **0.719 real-time / 0.715 offline.**
 
 ### Sample detections (all sensors)
 
@@ -310,11 +311,11 @@ The mAP progression across the project: classical baseline **0.069** → tuned
 classical **0.249** → CenterNet **0.289** → hybrid router **0.315** → event
 augmentation **0.398** → grid-192 + box calibration **0.454** → 3-model ensemble
 + stacking **0.554** → **multi-window temporal context 0.660** → grid-256 Stars3
-**0.668** → hard-negative + coasting **0.692** → **100-epoch convergence 0.704
-(deployed real-time)** → **offline ensemble 0.715**, a **10× gain over the
+**0.668** → hard-negative + coasting **0.692** → 100-epoch convergence **0.704** →
+**DIoU+hinge size loss 0.719 (deployed real-time)**, a **10× gain over the
 classical baseline**. Temporal context was the breakthrough for the dim-object
 recall that ensembling/scale could not touch (Thuraya3 2×). The achievable
-oracle ceiling is ~0.87 (§6.5b); the deployed system reaches 0.704 within the
+oracle ceiling is ~0.87 (§6.5b); the deployed system reaches 0.719 within the
 40 ms CPU budget.
 
 ### 6.2 Improvement history
@@ -420,7 +421,7 @@ median). The result rewrites the box-sizing strategy:
 
 Two conclusions:
 1. **The whole-test achievable ceiling is ≈ 0.87** (mean of each sequence's best
-   strategy). We reach **0.704 real-time / 0.715 offline**; the remaining gap to
+   strategy). We reach **0.719 real-time / 0.715 offline**; the remaining gap to
    the ceiling is **detection/recall, not data and not box size** — the
    information is there.
 2. **Box sizing must be per-sensor, not global.** EVK4's object *fills* its box,

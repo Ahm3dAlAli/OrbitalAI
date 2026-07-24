@@ -1,24 +1,25 @@
 {
-  "_comment": "Canonical MEASURED results for OrbitSight (frozen evaluate.py). REAL-TIME deployable (single model per sensor + coasting, all <40ms CPU) = 0.704; OFFLINE max (cross-grid ensemble + TTA) = 0.715. Final gain: retraining the deployed models to 100 epochs (patience 15) recovered EVK4 0.859->0.874 and Thuraya3 raw 0.469->0.524 from fuller convergence.",
+  "_comment": "Canonical MEASURED results for OrbitSight (frozen evaluate.py). REAL-TIME deployable (single model per sensor + coasting, all <40ms CPU) = 0.719 after adopting the scale-free DIoU+hinge size loss on DAVIS+Stars3 (g256_hn_iou): DAVIS 0.753->0.783, Stars3 0.651->0.677 (full 4-seq re-score, /tmp/full_m15). Prior 100-epoch baseline 0.704. OFFLINE max 0.715 is now STALE (pre-DIoU) and would re-score higher.",
   "real_time": {
-    "config": "per-sensor: EVK4->g192_ctx_v2, DAVIS+Stars3->g256_hn (grid-256 hard-neg), Thuraya3->g192_ctx_v2 + coasting Kalman. 100-epoch models. All sensors <40ms CPU.",
-    "mAP": 0.704, "latency_ms_cpu": 24, "note": "meets criterion #3 (<40ms CPU)",
-    "per_sequence": [["EVK4", 0.874], ["DAVIS", 0.753], ["Stars3", 0.651], ["Thuraya3", 0.538]]
+    "config": "per-sensor: EVK4->g192_ctx_v2, DAVIS+Stars3->g256_hn_iou (grid-256 hard-neg + DIoU+hinge size loss), Thuraya3->g192_ctx_v2 + coasting Kalman. All sensors <40ms CPU.",
+    "mAP": 0.719, "latency_ms_cpu": 24, "note": "measured full-pipeline re-score (mean of 4 test-seq APs); meets criterion #3 (<40ms CPU)",
+    "per_sequence": [["EVK4", 0.881], ["DAVIS", 0.783], ["Stars3", 0.677], ["Thuraya3", 0.534]]
   },
   "offline": {
     "config": "router: EVK4->cross-grid ensemble+TTA, DAVIS/DVX->temporal+TTA, Stars3->g256_hn, Thuraya3->v2 coasted",
     "mAP": 0.715, "latency_ms_cpu": 211, "note": "max accuracy; cross-grid ensemble+TTA ~211ms -> NOT real-time"
   },
-  "best_config": "REAL-TIME deployed: 0.704 (100-epoch models). OFFLINE max: 0.715.",
+  "best_config": "REAL-TIME deployed: 0.719 (DIoU size loss on DAVIS+Stars3). Prior 100-epoch baseline 0.704. OFFLINE 0.715 now stale (pre-DIoU).",
   "overall": {
-    "mAP": 0.715, "precision": 0.575, "recall": 0.80, "f1": 0.66,
-    "tp": 5385, "fp": 3976, "fn": 1691
+    "mAP": 0.719, "precision": 0.559, "recall": 0.849, "f1": 0.674,
+    "tp": 6011, "fp": 4748, "fn": 1065,
+    "note": "4 test-seq aggregate (DIoU on DAVIS+Stars3); mAP = mean of per-seq APs (EVK4 0.881, DAVIS 0.783, Stars3 0.677, Thuraya3 0.534)"
   },
   "per_sequence": [
-    ["EVK4\nmag7.3",   0.896, "EVK4"],
-    ["DAVIS\nSAOCOM1B", 0.774, "DAVIS"],
-    ["DVX\nStars3",    0.651, "DVX"],
-    ["DVX\nThuraya3",  0.538, "DVX"]
+    ["EVK4\nmag7.3",   0.881, "EVK4"],
+    ["DAVIS\nSAOCOM1B", 0.783, "DAVIS"],
+    ["DVX\nStars3",    0.677, "DVX"],
+    ["DVX\nThuraya3",  0.534, "DVX"]
   ],
   "roadmap": [
     ["Broken\nglobal-reg", 0.016],
@@ -32,7 +33,7 @@
     ["Grid-256\n+hard-neg", 0.668],
     ["Coasting\nKalman", 0.692],
     ["100-epoch\nconverge", 0.704],
-    ["Offline\nmax", 0.715]
+    ["DIoU size\nloss", 0.719]
   ],
   "ensemble_projected": 0.715,
   "temporal_gain": [
