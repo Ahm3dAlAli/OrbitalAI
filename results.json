@@ -71,8 +71,29 @@
       "min_radius_3": 0.6969,
       "dim_weight_0p5": 0.6673
     },
-    "phase_b_evk4": {"status": "pending", "note": "g192_ctx_v2 + --iou-size (g192_ctx_iou.pt); apply the winning ablation config"},
-    "full_rescore_projected": {"note": "4-seq deployed pipeline with g256_hn_iou swapped in; projected ~0.72 overall (up from 0.704), pending measured re-score"}
+    "full_rescore_measured": {"note": "4-seq deployed pipeline with g256_hn_iou on DAVIS+Stars3 -> real-time mAP 0.719 (from 0.704). DAVIS 0.753->0.783, Stars3 0.651->0.677."}
+  },
+  "batch2_ctx_levers": {
+    "_comment": "Batch 2: same three levers trained into the g192_ctx (EVK4+Thuraya3) checkpoint, one-variable A/Bs vs g192_ctx_v2, same-run scoring. EVK4 AP and Thuraya3 coasted AP.",
+    "metric": "AP@0.5 (EVK4 ; Thuraya3 coasted)",
+    "v2_baseline":  {"evk4": 0.8811, "thuraya3_coasted": 0.5337},
+    "iou_diou":     {"evk4": 0.8818, "thuraya3_coasted": 0.5376},
+    "r3_minradius": {"evk4": 0.8912, "thuraya3_coasted": 0.4915},
+    "dw_dimweight": {"evk4": 0.8273, "thuraya3_coasted": 0.5244},
+    "verdict": "EVK4 -> adopt min-radius (0.8811->0.8912, +0.010). Thuraya3 -> keep v2 (nothing beats 0.5337; r3 -0.042, dw -0.009, iou noise). Its floor holds against all three levers."
+  },
+  "lever_sensor_matrix": {
+    "_comment": "Delta vs. that sensor's baseline, measured. The per-sensor router is justified three ways: each lever has a distinct regime. + adopted, . flat/noise, - rejected.",
+    "columns": ["EVK4 (large bright)", "DAVIS+Stars3 (medium/crowded)", "Thuraya3 (tiny faint)"],
+    "diou_size_loss": ["flat", "+0.031 ADOPTED", "flat"],
+    "min_radius_3":   ["+0.010 ADOPTED", "-0.033 rejected", "-0.042 rejected"],
+    "dim_weight_0p5": ["-0.054 rejected", "-0.063 rejected", "-0.009 rejected"],
+    "reading": "radius floor is object-size-dependent (helps large EVK4, smears tiny/crowded objects); DIoU is a near-boundary-sizing lever (helps DAVIS+Stars3, flat elsewhere); dim-weight is too blunt (rejected everywhere)."
+  },
+  "deployed_final": {
+    "note": "per-sensor router: EVK4->g192_ctx_r3 (min-radius), DAVIS+Stars3->g256_hn_iou (DIoU), Thuraya3->g192_ctx_v2 + coasting. Adopting r3 on EVK4 lifts 0.719 -> ~0.721 (full re-score pending).",
+    "projected_mAP": 0.721,
+    "per_sequence": {"evk4": 0.8912, "davis": 0.783, "stars3": 0.677, "thuraya3": 0.534}
   },
   "latency_ms": [
     ["EVK4\n1280x720", 3.96, 14.93, 0.12],

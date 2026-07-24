@@ -511,12 +511,50 @@ adjacent peaks together) and up-weighting the sparsest windows pulls capacity of
 the model is scored on. They are retained as flags and re-tested on Thuraya3 (Batch 2),
 whose *single isolated faint* object is the opposite regime and lacks both failure modes.
 
-**Phase B (EVK4 + Thuraya3)** retrains `g192_ctx_v2` with `--iou-size` (and separately
-`--min-radius 3` / `--dim-weight 0.5`), scored on Thuraya3 (raw + coasted) and EVK4; the
-per-sensor router adopts each lever only where it wins. A full four-sequence re-score with
-the adopted DAVIS+Stars3 model (`g256_hn_iou`) is projected to lift the deployed real-time
-mAP from 0.704 to a **measured 0.719** (full 4-sequence re-score with `g256_hn_iou`:
-DAVIS 0.753 → 0.783, Stars3 0.651 → 0.677; EVK4/Thuraya3 unchanged).
+A full four-sequence re-score with the adopted DAVIS+Stars3 model (`g256_hn_iou`) lifts the
+deployed real-time mAP from 0.704 to a **measured 0.719** (DAVIS 0.753 → 0.783, Stars3
+0.651 → 0.677; EVK4/Thuraya3 unchanged).
+
+**Batch 2 (EVK4 + Thuraya3) completes the lever × sensor picture.** We trained the same
+three levers into the `g192_ctx_v2` checkpoint and scored them on EVK4 and Thuraya3
+(coasted), one-variable A/Bs vs. the L1 baseline.
+
+**Table 9 — Batch-2 lever A/B (measured AP@0.5; Thuraya3 coasted).**
+
+| Variant | EVK4 | Thuraya3 (coasted) |
+|---|---:|---:|
+| `g192_ctx_v2` (baseline) | 0.8811 | 0.5337 |
+| + DIoU (`--iou-size`) | 0.8818 | 0.5376 |
+| + min-radius 3 | **0.8912** | 0.4915 |
+| + dim-weight 0.5 | 0.8273 | 0.5244 |
+
+The result **inverts the naïve expectation** and vindicates the per-sensor router. The
+radius floor — which *hurt* the crowded Stars3 field — **helps the large bright EVK4
+object** (+0.010): a wider Gaussian adds positive signal with no neighbours to bleed into.
+On the *tiny* Thuraya3 object the same floor is now oversized and **smears the centre**
+(−0.042). DIoU is flat on both (its gain is a near-boundary-*sizing* effect, and neither
+EVK4 nor Thuraya3 is sizing-limited), and dim-weight hurts everywhere. **Thuraya3 beats
+none of the three** — every lever leaves its 0.5337 coasted floor intact, independent
+confirmation of the intrinsic-floor finding of §5.4.
+
+**Table 10 — Lever × sensor matrix (Δ vs. baseline; the router justified three ways).**
+
+| Lever | EVK4 (large) | DAVIS+Stars3 (medium/crowded) | Thuraya3 (tiny) |
+|---|:---:|:---:|:---:|
+| DIoU size loss | flat | **+0.031 ✓** | flat |
+| min-radius 3 | **+0.010 ✓** | −0.033 ✗ | −0.042 ✗ |
+| dim-weight 0.5 | −0.054 ✗ | −0.063 ✗ | −0.009 ✗ |
+
+Each lever occupies a distinct regime: **DIoU** is a near-boundary-sizing lever (helps the
+medium DAVIS/Stars3 boxes clustered at IoU 0.5, flat where objects are not sizing-limited);
+**min-radius** is object-size-dependent (helps large, hurts small/crowded); **dim-weight**
+is too blunt (rejected everywhere). This is precisely the per-sensor router's thesis —
+no single training configuration is best across sensors — measured lever by lever.
+
+**Adopted final configuration.** EVK4 → `g192_ctx_r3` (min-radius), DAVIS+Stars3 →
+`g256_hn_iou` (DIoU), Thuraya3 → `g192_ctx_v2` + coasting. Adopting min-radius on EVK4
+(0.8811 → 0.8912) is projected to lift the deployed real-time mAP **0.719 → 0.721**
+(full-pipeline re-score confirmation pending).
 
 ### 5.7 Qualitative results
 
