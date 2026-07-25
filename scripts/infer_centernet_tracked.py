@@ -32,7 +32,8 @@ def load_model(path):
     blob = torch.load(path, map_location="cpu", weights_only=False)
     c = blob["cfg"]
     m = EventCenterNet(grid=c["grid"], patch=c["patch"], tbins=c["tbins"],
-                       dim=c["dim"], hm_div=c["hm_div"], variant=c["variant"])
+                       dim=c["dim"], hm_div=c["hm_div"], variant=c["variant"],
+                       time_surface=c.get("time_surface", False))
     m.load_state_dict(blob["state_dict"]); m.eval()
     return m, c
 
@@ -70,7 +71,7 @@ def run(ev, seq, model, c, cfg, topk, peak_thresh, batch=128):
         buf.append(voxelize(ev.x[win.lo:win.hi], ev.y[win.lo:win.hi],
                    ev.pol[win.lo:win.hi], ev.t[win.lo:win.hi],
                    win.start_us, win.end_us, sn.width, sn.height,
-                   c["grid"], c["tbins"]))
+                   c["grid"], c["tbins"], time_surface=c.get("time_surface", False)))
         idxs.append(wi)
         if len(buf) >= batch:
             flush()

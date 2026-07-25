@@ -44,7 +44,8 @@ def load_model(path, device):
     c = blob["cfg"]
     m = EventCenterNet(grid=c["grid"], patch=c["patch"], tbins=c["tbins"],
                        dim=c["dim"], hm_div=c["hm_div"],
-                       enc_layers=c.get("enc_layers", 3), variant=c["variant"])
+                       enc_layers=c.get("enc_layers", 3), variant=c["variant"],
+                       time_surface=c.get("time_surface", False))
     m.load_state_dict(blob["state_dict"]); m.eval(); m.to(device)
     return m, c
 
@@ -72,7 +73,8 @@ def bench_sequence(ev, seq, model, c, cfg, device, batch, max_windows, warmup):
             lo = int(np.searchsorted(ev.t, ws, "left"))
             hi = int(np.searchsorted(ev.t, we, "left"))
         return voxelize(ev.x[lo:hi], ev.y[lo:hi], ev.pol[lo:hi], ev.t[lo:hi],
-                        ws, we, sn.width, sn.height, c["grid"], c["tbins"])
+                        ws, we, sn.width, sn.height, c["grid"], c["tbins"],
+                        time_surface=c.get("time_surface", False))
 
     # ---- warmup (first CUDA kernels + allocator are slow, not representative)
     for w in wins[:warmup]:

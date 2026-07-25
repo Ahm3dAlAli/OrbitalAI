@@ -33,7 +33,8 @@ from orbitsight.evt_centernet import EventCenterNet, decode_peaks
 def load(path, device):
     b = torch.load(path, map_location="cpu", weights_only=False); c = b["cfg"]
     m = EventCenterNet(grid=c["grid"], patch=c["patch"], tbins=c["tbins"], dim=c["dim"],
-                       hm_div=c["hm_div"], enc_layers=c.get("enc_layers", 3), variant=c["variant"])
+                       hm_div=c["hm_div"], enc_layers=c.get("enc_layers", 3), variant=c["variant"],
+                       time_surface=c.get("time_surface", False))
     m.load_state_dict(b["state_dict"]); m.eval(); m.to(device)
     return m, c
 
@@ -67,7 +68,7 @@ def main():
     args = ap.parse_args()
     dev = args.device
     m, c = load(args.model, dev)
-    ctx = c.get("context", 0); grid, tb = c["grid"], c["tbins"]
+    ctx = c.get("context", 0); grid, tb = c["grid"], c["tbins"]; ts = c.get("time_surface", False)
     sn = sensor_for_sequence(args.seq)
     ev = D.Events.from_npy(D.find_event_file(args.data_dir, args.seq))
     gt = load_gt(os.path.join(args.data_dir, args.seq + D.GT_SUFFIX))
@@ -83,7 +84,7 @@ def main():
             ws, we = ws-ctx*DEFAULT_CONFIG.window_us, we+ctx*DEFAULT_CONFIG.window_us
             lo = int(np.searchsorted(ev.t, ws, "left")); hi = int(np.searchsorted(ev.t, we, "left"))
         vox = voxelize(ev.x[lo:hi], ev.y[lo:hi], ev.pol[lo:hi], ev.t[lo:hi], ws, we,
-                       sn.width, sn.height, grid, tb)
+                       sn.width, sn.height, grid, tb, time_surface=ts)
         x = torch.from_numpy(vox[None]).float().to(dev)
         hm, wh, off = m(x)
         u = feat_box["u"][0]                                   # (ch, H, W)

@@ -63,12 +63,14 @@ class SSMMixer(nn.Module):
 
 class EventCenterNet(nn.Module):
     def __init__(self, grid=128, patch=8, tbins=3, dim=128, heads=4,
-                 enc_layers=3, hm_div=2, variant="evt"):
+                 enc_layers=3, hm_div=2, variant="evt", time_surface=False):
         super().__init__()
         self.grid, self.patch, self.tbins = grid, patch, tbins
+        self.time_surface = time_surface
         self.gp = grid // patch                       # token grid side
         self.hm = grid // hm_div                       # heatmap side
-        C = tbins * 2
+        # +2 channels for the fused Time-Surface (NeuTAR-RSO "TAR"); see voxelize().
+        C = tbins * 2 + (2 if time_surface else 0)
         self.embed = nn.Conv2d(C, dim, patch, stride=patch)
         self.pos = nn.Parameter(torch.zeros(1, self.gp * self.gp, dim))
         nn.init.trunc_normal_(self.pos, std=0.02)

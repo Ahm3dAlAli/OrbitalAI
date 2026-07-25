@@ -29,26 +29,48 @@ import torch.nn.functional as F
 # --------------------------------------------------------------------------- #
 #  Event representation — sparse voxel grid (resolution-agnostic)
 # --------------------------------------------------------------------------- #
-def voxelize(x, y, pol, t, ws, we, width, height, grid=64, tbins=3):
-    """Accumulate a window's events into a (tbins*2, grid, grid) voxel tensor.
+def voxelize(x, y, pol, t, ws, we, width, height, grid=64, tbins=3,
+             time_surface=False, ts_tau=0.3):
+    """Accumulate a window's events into a (C, grid, grid) voxel tensor.
 
     Coordinates are normalized by the sensor size before gridding, so the same
     grid (and the same model) serves DAVIS / DVX / EVK4 (resolution-agnostic,
-    PRD NFR-3).  Channels interleave (time-bin, polarity).
+    PRD NFR-3).  The first `tbins*2` channels interleave (time-bin, polarity) —
+    a Time-Aggregated Frame (event counts binned by time and polarity).
+
+    `time_surface` appends NeuTAR-RSO's "TAR" fusion: 2 extra channels holding a
+    per-pixel, polarity-split **Time Surface** — the exponential-decay recency of
+    the LATEST event at each pixel (recent -> ~1, stale -> ~0). This encodes the
+    local motion/velocity that raw counts wash out, and is fused with (stacked on)
+    the count frame so the model sees both. `ts_tau` is the decay time-constant as
+    a fraction of the window duration. Off by default -> C = tbins*2 (unchanged);
+    checkpoints trained without it reconstruct the exact same channel layout.
     """
-    C = tbins * 2
+    C = tbins * 2 + (2 if time_surface else 0)
     vox = np.zeros((C, grid, grid), dtype=np.float32)
     if x.size == 0:
         return vox
     gx = np.clip((x.astype(np.float64) / width * grid).astype(np.int64), 0, grid - 1)
     gy = np.clip((y.astype(np.float64) / height * grid).astype(np.int64), 0, grid - 1)
     dur = max(int(we - ws), 1)
-    tb = np.clip(((t - ws).astype(np.float64) / dur * tbins).astype(np.int64), 0, tbins - 1)
+    rel = (t - ws).astype(np.float64) / dur                       # event recency in [0,1]
+    tb = np.clip((rel * tbins).astype(np.int64), 0, tbins - 1)
     p = (pol > 0).astype(np.int64)
     ch = tb * 2 + p
     np.add.at(vox, (ch, gy, gx), 1.0)
-    # log compression tames the dense-EVK4 vs sparse-DVX count gap
-    np.log1p(vox, out=vox)
+    # log compression tames the dense-EVK4 vs sparse-DVX count gap (count channels only)
+    np.log1p(vox[:tbins * 2], out=vox[:tbins * 2])
+    if time_surface:
+        # Time Surface: keep the most-recent event's recency per (polarity, cell),
+        # then map to an exponential decay from the window end. Channels tbins*2..+1.
+        base = tbins * 2
+        for pp in (0, 1):
+            m = p == pp
+            if m.any():
+                np.maximum.at(vox[base + pp], (gy[m], gx[m]), rel[m])
+        surf = vox[base:base + 2]
+        occ = surf > 0
+        surf[occ] = np.exp(-(1.0 - surf[occ]) / ts_tau)
     return vox
 
 

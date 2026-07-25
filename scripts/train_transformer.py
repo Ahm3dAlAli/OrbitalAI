@@ -36,8 +36,10 @@ from orbitsight.augment import augment as augment_events
 class WindowSet(Dataset):
     def __init__(self, data_dir, sequences, cfg, grid, tbins,
                  neg_per_pos=1.5, seed=0, augment=False, context=0,
-                 _items=None, _events=None, _sensors=None, aug_cfg=None):
+                 _items=None, _events=None, _sensors=None, aug_cfg=None,
+                 time_surface=False):
         self.grid, self.tbins, self.cfg = grid, tbins, cfg
+        self.time_surface = time_surface   # fuse Time-Surface channels (TAR)
         self.augment = augment
         self.aug_cfg = aug_cfg          # None -> default AugCfg; else an override
         self.context = context          # +/- windows of temporal context
@@ -107,7 +109,8 @@ class WindowSet(Dataset):
                                                      self._rng, self.aug_cfg)
             else:
                 xn, yn, pol, t, box = augment_events(xn, yn, pol, t, box, ws, we, self._rng)
-        vox = voxelize(xn, yn, pol, t, ws, we, 1.0, 1.0, self.grid, self.tbins)
+        vox = voxelize(xn, yn, pol, t, ws, we, 1.0, 1.0, self.grid, self.tbins,
+                       time_surface=self.time_surface)
         has = box is not None
         b = np.array(box if has else (0, 0, 0, 0), dtype=np.float32)
         return torch.from_numpy(vox), torch.tensor(float(has)), torch.from_numpy(b)

@@ -133,6 +133,12 @@ def main():
                     help="hinge weight for --iou-size (0 = pure DIoU, no near-miss "
                          "hinge — isolates scale-invariance from boundary focus). "
                          "Requires --iou-size.")
+    ap.add_argument("--time-surface", action="store_true",
+                    help="fuse NeuTAR-RSO's 'TAR' Time-Surface channels: append 2 "
+                         "polarity-split exponential-decay recency maps to the voxel "
+                         "(C = tbins*2 -> tbins*2+2). Encodes local motion the raw "
+                         "count bins wash out. A/B against the count-only voxel. "
+                         "Off by default; requires retraining (input channels change).")
     ap.add_argument("--min-radius", type=int, default=1,
                     help="floor for the heatmap Gaussian splat radius (cells). The "
                          "0.3*max(w,h) formula collapses to ~1 cell for a ~10 px object, "
@@ -156,10 +162,12 @@ def main():
     dim_cfg = AugCfg(drop_p=0.85, drop_min=0.10, noise=0.5) if args.dim_aug else None
     train_ds = WindowSet(None, None, DEFAULT_CONFIG, args.grid, args.tbins,
                          augment=args.augment, context=args.context, _items=tr_items,
-                         _events=full.events, _sensors=full.sensors, aug_cfg=dim_cfg)
+                         _events=full.events, _sensors=full.sensors, aug_cfg=dim_cfg,
+                         time_surface=args.time_surface)
     val_ds = WindowSet(None, None, DEFAULT_CONFIG, args.grid, args.tbins,
                        augment=False, context=args.context, _items=va_items,
-                       _events=full.events, _sensors=full.sensors)
+                       _events=full.events, _sensors=full.sensors,
+                       time_surface=args.time_surface)
     print(f"[data] train={len(train_ds)} val={len(val_ds)}  aug={'ON' if args.augment else 'off'}")
     pin = device == "cuda"
     reweight = (args.dvx_weight != 1.0 or args.evk4_weight != 1.0
@@ -187,7 +195,7 @@ def main():
 
     model = EventCenterNet(grid=args.grid, patch=args.patch, tbins=args.tbins,
                            dim=args.dim, hm_div=args.hm_div, enc_layers=args.enc_layers,
-                           variant=args.variant).to(device)
+                           variant=args.variant, time_surface=args.time_surface).to(device)
     hm_size = model.hm
     print(f"[model] CenterNet-{args.variant.upper()} hm={hm_size} "
           f"{sum(p.numel() for p in model.parameters())/1e6:.2f}M params")
@@ -203,7 +211,11 @@ def main():
                              "dim_aug": bool(args.dim_aug), "hard_neg": args.hard_neg},
                 "iou_size": bool(args.iou_size),
                 "iou_margin": args.iou_margin, "iou_lambda": args.iou_lambda,
-                "min_radius": args.min_radius}
+                "min_radius": args.min_radius,
+                "time_surface": bool(args.time_surface)}
+    if args.time_surface:
+        print("[time-surface] TAR fusion ON: +2 exp-decay Time-Surface channels "
+              f"(input C = {args.tbins * 2} -> {args.tbins * 2 + 2})")
     if args.hard_neg > 0:
         print(f"[hard-neg] online mining, focal upweight ×{args.hard_neg} on "
               "high-confidence strict-background cells")
