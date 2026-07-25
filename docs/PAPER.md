@@ -553,8 +553,8 @@ no single training configuration is best across sensors — measured lever by le
 
 **Adopted final configuration.** EVK4 → `g192_ctx_r3` (min-radius), DAVIS+Stars3 →
 `g256_hn_iou` (DIoU), Thuraya3 → `g192_ctx_v2` + coasting. Adopting min-radius on EVK4
-(0.8811 → 0.8912) is projected to lift the deployed real-time mAP **0.719 → 0.721**
-(full-pipeline re-score confirmation pending).
+(0.8811 → 0.8912) lifts the deployed real-time mAP **0.719 → 0.721** (measured
+full-pipeline re-score: EVK4 0.891, DAVIS 0.783, Stars3 0.677, Thuraya3 0.534).
 
 ### 5.7 Qualitative results
 

@@ -91,9 +91,9 @@
     "reading": "radius floor is object-size-dependent (helps large EVK4, smears tiny/crowded objects); DIoU is a near-boundary-sizing lever (helps DAVIS+Stars3, flat elsewhere); dim-weight is too blunt (rejected everywhere)."
   },
   "deployed_final": {
-    "note": "per-sensor router: EVK4->g192_ctx_r3 (min-radius), DAVIS+Stars3->g256_hn_iou (DIoU), Thuraya3->g192_ctx_v2 + coasting. Adopting r3 on EVK4 lifts 0.719 -> ~0.721 (full re-score pending).",
-    "projected_mAP": 0.721,
-    "per_sequence": {"evk4": 0.8912, "davis": 0.783, "stars3": 0.677, "thuraya3": 0.534}
+    "note": "per-sensor router: EVK4->g192_ctx_r3 (min-radius), DAVIS+Stars3->g256_hn_iou (DIoU), Thuraya3->g192_ctx_v2 + coasting. MEASURED full re-score (/tmp/full_r3): EVK4 min-radius lifts 0.719 -> 0.721. mAP = mean(0.8912, 0.783, 0.6768, 0.5337) = 0.7212.",
+    "measured_mAP": 0.721,
+    "per_sequence": {"evk4": 0.8912, "davis": 0.783, "stars3": 0.6768, "thuraya3": 0.5337}
   },
   "latency_ms": [
     ["EVK4\n1280x720", 3.96, 14.93, 0.12],
