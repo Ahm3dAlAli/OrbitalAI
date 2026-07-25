@@ -80,9 +80,10 @@ def iou(a, b):
     return inter / ua if ua > 0 else 0.0
 
 
-def box_features(xs, ys, ts, ps, cx, cy, bw, bh, conf, cfg, sensor):
+def box_features(cloud, xs, ys, cx, cy, bw, bh, conf):
     """Aggregate classical coherence features over the events inside the box, plus
-    box-level statistics. Returns a fixed-length vector of size _DIM."""
+    box-level statistics. `cloud` is a WindowCloud prebuilt ONCE for the window (or
+    None if the window has <2 events). Returns a fixed-length vector of size _DIM."""
     hw, hh = bw / 2.0, bh / 2.0
     inb = (np.abs(xs - cx) <= hw) & (np.abs(ys - cy) <= hh)
     n_in = int(inb.sum())
@@ -92,17 +93,26 @@ def box_features(xs, ys, ts, ps, cx, cy, bw, bh, conf, cfg, sensor):
     d_ring = (n_ring + 0.5) / max(3.0 * bw * bh, 1.0)
     conc = d_in / d_ring
     feat_mean = np.zeros(_N_FEATURES, dtype=np.float64)
-    if n_in >= 2:
-        cloud = build_cloud(xs, ys, ts, ps, sensor, cfg)
-        qi = np.where(inb)[0]
-        F = cloud.features(qi)                       # (n_in, _N_FEATURES)
+    if n_in >= 2 and cloud is not None:
+        F = cloud.features(np.where(inb)[0])         # (n_in, _N_FEATURES)
         feat_mean = F.mean(axis=0)
     return np.concatenate([[np.log1p(n_in), conc, bw, bh, conf], feat_mean])
 
 
-def collect(seqs, data_dir, pred_dir, gt_dir, cfg, label=True):
-    """Build (X, y, meta) over all detections in the given sequences."""
+def _win_features(ev, w, sensor, cfg, boxes):
+    """Featurize every box in one window, building the KD-tree cloud ONCE."""
+    xs, ys = ev.x[w.lo:w.hi], ev.y[w.lo:w.hi]
+    ts, ps = ev.t[w.lo:w.hi], ev.pol[w.lo:w.hi]
+    cloud = build_cloud(xs, ys, ts, ps, sensor, cfg) if xs.size >= 2 else None
+    return [box_features(cloud, xs, ys, cx, cy, bw, bh, c) for (cx, cy, bw, bh, c) in boxes]
+
+
+def collect(seqs, data_dir, pred_dir, gt_dir, cfg, label=True, max_per_seq=None, seed=0):
+    """Build (X, y) over detections in the given sequences. Builds the KD-tree cloud
+    once per window; optionally subsamples up to max_per_seq detections per sequence
+    (LightGBM needs a few thousand, not all ~20k -- the cloud builds are the cost)."""
     X, y = [], []
+    rng = np.random.default_rng(seed)
     for seq in seqs:
         rows = read_rows(os.path.join(pred_dir, seq + D.GT_SUFFIX))
         ep = D.find_event_file(data_dir, seq)
@@ -112,18 +122,22 @@ def collect(seqs, data_dir, pred_dir, gt_dir, cfg, label=True):
         ev = D.Events.from_npy(ep)
         sensor = sensor_for_sequence(seq)
         wins = {w.start_us: w for w in D.make_window_grid(ev.t, cfg.window_us)}
-        for ws, boxes in rows.items():
+        items = [(ws, box) for ws, boxes in rows.items() for box in boxes]  # (ws, box)
+        if max_per_seq and len(items) > max_per_seq:                        # subsample
+            items = [items[i] for i in rng.choice(len(items), max_per_seq, replace=False)]
+        by_win = {}
+        for ws, box in items:
+            by_win.setdefault(ws, []).append(box)
+        for ws, boxes in by_win.items():
             w = wins.get(ws)
             if w is None:
                 continue
-            xs, ys = ev.x[w.lo:w.hi], ev.y[w.lo:w.hi]
-            ts, ps = ev.t[w.lo:w.hi], ev.pol[w.lo:w.hi]
+            feats = _win_features(ev, w, sensor, cfg, boxes)
             gtb = gt.get(ws, [])
-            for (cx, cy, bw, bh, c) in boxes:
-                X.append(box_features(xs, ys, ts, ps, cx, cy, bw, bh, c, cfg, sensor))
+            for (cx, cy, bw, bh, c), fv in zip(boxes, feats):
+                X.append(fv)
                 if label:
-                    tp = any(iou((cx, cy, bw, bh), g) >= 0.5 for g in gtb)
-                    y.append(1 if tp else 0)
+                    y.append(1 if any(iou((cx, cy, bw, bh), g) >= 0.5 for g in gtb) else 0)
         del ev
     return (np.asarray(X, np.float32),
             np.asarray(y, np.int32) if label else None)
@@ -141,6 +155,10 @@ def main():
     ap.add_argument("--gt-dir", default=None, help="test GT dir -> score after")
     ap.add_argument("--beta", type=float, default=0.5,
                     help="0 = no change, 1 = confidence fully replaced by P(TP)")
+    ap.add_argument("--max-train-per-seq", type=int, default=600,
+                    help="cap detections featurized per training sequence (subsample). "
+                         "The KD-tree cloud builds dominate cost; a few thousand total "
+                         "is plenty for LightGBM. 0 = use all.")
     args = ap.parse_args()
     cfg = DEFAULT_CONFIG
 
@@ -149,13 +167,15 @@ def main():
     # ---- build training set from the TRAINING-sequence detections -------- #
     train_seqs = sorted(os.path.basename(p)[:-len(D.EV_SUFFIX)]
         for p in glob.glob(os.path.join(args.train_data_dir, "*" + D.EV_SUFFIX)))
-    print(f"[fp-rej] building training set over {len(train_seqs)} training sequences...")
+    print(f"[fp-rej] building training set over {len(train_seqs)} training sequences "
+          f"(<= {args.max_train_per_seq or 'all'} detections/seq)...", flush=True)
     Xtr, ytr = collect(train_seqs, args.train_data_dir, args.train_pred_dir,
-                       args.train_gt_dir, cfg, label=True)
+                       args.train_gt_dir, cfg, label=True,
+                       max_per_seq=(args.max_train_per_seq or None))
     if Xtr.size == 0 or ytr.sum() == 0 or ytr.sum() == len(ytr):
         print(f"[fp-rej] ERROR: degenerate training set (n={len(ytr)}, pos={int(ytr.sum())})"); return
     print(f"[fp-rej] train detections={len(ytr)}  TP={int(ytr.sum())} "
-          f"FP={int(len(ytr) - ytr.sum())} (precision {ytr.mean():.3f})")
+          f"FP={int(len(ytr) - ytr.sum())} (precision {ytr.mean():.3f})", flush=True)
 
     # small, shallow model — a phantom rejector must GENERALIZE, not memorize.
     clf = lgb.LGBMClassifier(n_estimators=120, num_leaves=15, max_depth=4,
@@ -187,11 +207,8 @@ def main():
                 for (cx, cy, bw, bh, c) in boxes:
                     out.append((ws, ws + cfg.window_us, cx, cy, bw, bh, c))
                 continue
-            xs, yy = ev.x[w.lo:w.hi], ev.y[w.lo:w.hi]
-            ts, pp = ev.t[w.lo:w.hi], ev.pol[w.lo:w.hi]
             gtb = gt.get(ws, [])
-            feats = [box_features(xs, yy, ts, pp, cx, cy, bw, bh, c, cfg, sensor)
-                     for (cx, cy, bw, bh, c) in boxes]
+            feats = _win_features(ev, w, sensor, cfg, boxes)   # cloud built once
             ptp = clf.predict_proba(np.asarray(feats, np.float32))[:, 1] if feats else []
             for (cx, cy, bw, bh, c), p in zip(boxes, ptp):
                 nc = float(np.clip((c ** (1 - args.beta)) * (p ** args.beta), 1e-4, 1.0))
