@@ -11,10 +11,12 @@
 #   /work/teamName/DDMMYYYY  (write)      predictions + scoring sheet
 #
 # Everything below is overridable via env vars (see docker run examples in the
-# Dockerfile header).  Defaults reproduce the deployed real-time result on CPU:
-# a single temporal model per sensor (the 100-epoch g192_ctx_v2 when baked in,
-# else g192_ctx), with the Stars3 star field routed to a grid-256 multi-object
-# detector and Thuraya3 to coasting Kalman (overall mAP 0.704, all sensors < 40 ms).
+# Dockerfile header).  Defaults reproduce the deployed real-time result on CPU
+# (overall mAP 0.721, all sensors < 40 ms), one model per sensor via the router:
+#   EVK4          -> g192_ctx_r3   (min-radius Gaussian floor; AP 0.891)
+#   DAVIS, Stars3 -> g256_hn_iou   (grid-256 hard-neg + DIoU size loss; 0.783/0.677)
+#   Thuraya3      -> g192_ctx_v2 + coasting Kalman   (0.534)
+# Each has a fallback if the specific checkpoint is absent (g192_ctx_v2 / g256_hn).
 set -e
 export KMP_DUPLICATE_LIB_OK=TRUE PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-0}"
@@ -25,21 +27,30 @@ DATESTAMP="${ORBITSIGHT_DATE:-$(date +%d%m%Y)}"
 OUT="${ORBITSIGHT_OUT:-/work/${TEAM}/${DATESTAMP}}"
 DEVICE="${ORBITSIGHT_DEVICE:-cpu}"                 # cpu (portable, real-time) | cuda
 TTA="${ORBITSIGHT_TTA:---tta}"                     # set to "" to disable TTA
-# DAVIS/DVX/EVK4 temporal detector — prefer the 100-epoch g192_ctx_v2 (real-time
-# 0.704: EVK4 0.859->0.874, Thuraya3 raw 0.469->0.524) and fall back to g192_ctx.
+# DVX/DAVIS base temporal detector — the 100-epoch g192_ctx_v2 (also the Thuraya3
+# base, then coasted). Falls back to g192_ctx if v2 is absent.
 if [ -z "${ORBITSIGHT_MODELS:-}" ] && [ -f models/g192_ctx_v2.pt ]; then
     MODELS="models/g192_ctx_v2.pt"
 else
     MODELS="${ORBITSIGHT_MODELS:-models/g192_ctx.pt}"
 fi
-# Optional distinct EVK4 detector(s) for the per-sensor router (cross-grid).
-# If unset, the DAVIS/DVX models are used for EVK4 too (single-ensemble mode).
-EVK4_MODELS="${ORBITSIGHT_EVK4_MODELS:-}"
-# DAVIS + Stars3 -> grid-256 hard-negative model (DAVIS 0.729->0.753, Stars3
-# 0.613->0.651). If absent, those sensors keep the default detector's prediction.
-G256_MODEL="${ORBITSIGHT_G256_MODEL:-models/g256_hn.pt}"
+# EVK4 -> g192_ctx_r3 (min-radius: heatmap Gaussian floor helps the large bright
+# object, EVK4 0.881->0.891). Distinct from the DVX/DAVIS base via the router.
+# Falls back to the base MODELS if r3 is absent.
+if [ -z "${ORBITSIGHT_EVK4_MODELS:-}" ] && [ -f models/g192_ctx_r3.pt ]; then
+    EVK4_MODELS="models/g192_ctx_r3.pt"
+else
+    EVK4_MODELS="${ORBITSIGHT_EVK4_MODELS:-}"
+fi
+# DAVIS + Stars3 -> grid-256 hard-neg + scale-free DIoU size loss (g256_hn_iou:
+# DAVIS 0.753->0.783, Stars3 0.651->0.677). Falls back to g256_hn, then to the base.
+if [ -z "${ORBITSIGHT_G256_MODEL:-}" ] && [ -f models/g256_hn_iou.pt ]; then
+    G256_MODEL="models/g256_hn_iou.pt"
+else
+    G256_MODEL="${ORBITSIGHT_G256_MODEL:-models/g256_hn.pt}"
+fi
 STARS_TOPK="${ORBITSIGHT_STARS_TOPK:-2}"
-# Thuraya3 faint object -> coasting Kalman recall recovery (raw 0.524->0.538 on v2).
+# Thuraya3 faint object -> coasting Kalman recall recovery (raw 0.524->0.534 on v2).
 COAST="${ORBITSIGHT_COAST:-1}"; COAST_MAX="${ORBITSIGHT_COAST_MAX:-50}"
 
 mkdir -p "${OUT}"
@@ -49,7 +60,7 @@ echo "[run_infer] models=[${MODELS}] evk4=[${EVK4_MODELS:-<same>}] tta=${TTA:-of
 # Fall back to whatever temporal-ish checkpoint is present if the default is absent.
 first_present() { for m in "$@"; do [ -f "$m" ] && { echo "$m"; return; }; done; }
 if [ -z "$(first_present $MODELS)" ]; then
-    ALT="$(first_present models/g192_ctx_v2.pt models/g192_ctx.pt models/evt_centernet_aug.pt models/evt_centernet.pt)"
+    ALT="$(first_present models/g192_ctx_r3.pt models/g192_ctx_v2.pt models/g192_ctx.pt models/evt_centernet_aug.pt models/evt_centernet.pt)"
     [ -n "$ALT" ] && MODELS="$ALT" && echo "[run_infer] default model missing; using ${MODELS}"
 fi
 
