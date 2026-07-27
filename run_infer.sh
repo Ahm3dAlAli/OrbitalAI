@@ -19,7 +19,8 @@
 # Each has a fallback if the specific checkpoint is absent (g192_ctx_v2 / g256_hn).
 set -e
 export KMP_DUPLICATE_LIB_OK=TRUE PYTHONUNBUFFERED=1
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-0}"
+# Use all cores by default (0 is rejected by newer torch/libgomp -> noisy warnings).
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$(nproc 2>/dev/null || echo 4)}"
 
 DATASET="${ORBITSIGHT_DATASET:-/OrbitSight_dataset}"
 TEAM="${ORBITSIGHT_TEAM:-OrbitalAI}"                # portal collects /work/<team>/DDMMYYYY
