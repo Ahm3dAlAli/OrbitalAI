@@ -63,9 +63,16 @@ RUN test -f models/g192_ctx_v2.pt || \
 ENV KMP_DUPLICATE_LIB_OK=TRUE \
     PYTHONUNBUFFERED=1 \
     ORBITSIGHT_DATASET=/OrbitSight_dataset \
-    ORBITSIGHT_DEVICE=cpu
+    ORBITSIGHT_DEVICE=cpu \
+    ORBITSIGHT_TEAM=OrbitalAI \
+    ORBITSIGHT_CLASS_ID=0
 
-# Default: the winning deep pipeline. Finishes on its own (offline).
+# Automatic, non-interactive entrypoint: the deployed pipeline runs to completion
+# with no shell interaction. Writes into the portal-collected folder
+# /work/OrbitalAI/DDMMYYYY:
+#   - <sequencename>.txt        one detection/row: sequence_id, timestamp_us, x, y,
+#                               w, h, class_id, confidence
+#   - Evaluation_Metrics.xlsx   scoring sheet (when GT is present)
 CMD ["sh", "run_infer.sh"]
 
 # ---------------------------------------------------------------------------

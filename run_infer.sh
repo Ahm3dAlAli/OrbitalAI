@@ -22,7 +22,7 @@ export KMP_DUPLICATE_LIB_OK=TRUE PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-0}"
 
 DATASET="${ORBITSIGHT_DATASET:-/OrbitSight_dataset}"
-TEAM="${ORBITSIGHT_TEAM:-OrbitSight}"
+TEAM="${ORBITSIGHT_TEAM:-OrbitalAI}"                # portal collects /work/<team>/DDMMYYYY
 DATESTAMP="${ORBITSIGHT_DATE:-$(date +%d%m%Y)}"
 OUT="${ORBITSIGHT_OUT:-/work/${TEAM}/${DATESTAMP}}"
 DEVICE="${ORBITSIGHT_DEVICE:-cpu}"                 # cpu (portable, real-time) | cuda
@@ -136,5 +136,12 @@ echo "[run_infer] generating Evaluation_Metrics.xlsx"
 python3 scripts/evaluate_wrapper.py --dataset "${DATASET}" \
     --pred-dir "${OUT}" --excel-out "${OUT}/Evaluation_Metrics.xlsx" || \
     echo "[run_infer] (evaluation skipped — GT not available)"
+
+# Portal format: one detection per row (sequence_id, timestamp_us, x, y, w, h,
+# class_id, confidence) as <sequencename>.txt, in the same collected folder.
+echo "[run_infer] writing portal <sequencename>.txt files"
+python3 scripts/to_portal_format.py --pred-dir "${OUT}" \
+    --class-id "${ORBITSIGHT_CLASS_ID:-0}" || \
+    echo "[run_infer] (portal conversion skipped)"
 
 echo "[run_infer] done -> ${OUT}"
