@@ -87,12 +87,22 @@ def window_components(xs, ys, k, reg):
     return comps
 
 
-def denoise_xy(ev, w, sensor, cfg, do_denoise):
-    xs, ys = ev.x[w.lo:w.hi], ev.y[w.lo:w.hi]
+_RNG = np.random.default_rng(0)
+
+
+def window_xy(ev, w, sensor, cfg, do_denoise, max_events):
+    """Return (x,y) pixels for the window, event-capped for speed, BAF-denoised."""
+    lo, hi = w.lo, w.hi
+    n = hi - lo
+    if n > max_events:                          # cap: bounds KD-tree + GMM cost
+        sel = np.sort(_RNG.choice(n, max_events, replace=False)) + lo
+        xs, ys, ts, ps = ev.x[sel], ev.y[sel], ev.t[sel], ev.pol[sel]
+    else:
+        xs, ys, ts, ps = ev.x[lo:hi], ev.y[lo:hi], ev.t[lo:hi], ev.pol[lo:hi]
     if not do_denoise or xs.size < 3:
         return xs, ys
-    cloud = build_cloud(xs, ys, ev.t[w.lo:w.hi], ev.pol[w.lo:w.hi], sensor, cfg)
-    keep = cloud.denoise_keep(0, xs.size)     # BAF: >= support neighbors in (x,y,t) ball
+    cloud = build_cloud(xs, ys, ts, ps, sensor, cfg)
+    keep = cloud.denoise_keep(0, xs.size)       # BAF: >= support neighbors in (x,y,t) ball
     return xs[keep], ys[keep]
 
 
@@ -102,7 +112,11 @@ def run_sequence(ev, seq, cfg, args, cn_rows=None):
     box = args.box_px
     out = []
     for w in wins:
-        xs, ys = denoise_xy(ev, w, sn, cfg, args.denoise)
+        # gate mode: only fit a GMM where there's a CenterNet box to verify (huge speedup)
+        cn_here = cn_rows.get(w.start_us, []) if cn_rows is not None else None
+        if cn_rows is not None and not cn_here:
+            continue
+        xs, ys = window_xy(ev, w, sn, cfg, args.denoise, args.max_events)
         comps = window_components(xs, ys, args.k, args.reg)
         if cn_rows is None:
             # ---- standalone: emit the strongest component(s) as boxes ------- #
@@ -115,7 +129,7 @@ def run_sequence(ev, seq, cfg, args, cn_rows=None):
                     box, box, conf))
         else:
             # ---- gate mode: re-rank the CenterNet boxes by GMM support ------- #
-            for (cx, cy, bw, bh, cf) in cn_rows.get(w.start_us, []):
+            for (cx, cy, bw, bh, cf) in cn_here:
                 near = 0.0
                 for (gx, gy, wt, nj, dens) in comps:
                     if abs(gx - cx) <= args.gate_px and abs(gy - cy) <= args.gate_px:
@@ -144,6 +158,9 @@ def main():
     ap.add_argument("--gate-px", type=float, default=12.0, help="gate: cluster-to-box match radius")
     ap.add_argument("--beta", type=float, default=0.5, help="gate: 0=no change, 1=rank by support")
     ap.add_argument("--denoise", action="store_true", help="apply BAF denoise before GMM")
+    ap.add_argument("--max-events", type=int, default=400,
+                    help="cap events/window fed to the GMM (subsample; bounds cost). "
+                         "A target blob needs few points, so this is near-lossless.")
     args = ap.parse_args()
     cfg = DEFAULT_CONFIG
 
