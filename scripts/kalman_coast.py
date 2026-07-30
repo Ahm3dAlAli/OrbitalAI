@@ -49,19 +49,37 @@ def read_rows(path):
     return out
 
 
-def kalman_full(idx, meas, q, r):
-    """CV Kalman forward + RTS smoother; returns smoothed (x,y) at EVERY grid
-    index in [idx[0], idx[-1]] (gaps included, via predict-only steps)."""
+def _motion_model(model):
+    """Return (F, H, Q_unit, obs_idx) for the chosen constant-* motion model.
+    cv = constant velocity  [x,vx, y,vy];  ca = constant acceleration (the paper's
+    Euler propagation with an a-term)  [x,vx,ax, y,vy,ay]: x+=v+0.5a, v+=a."""
+    if model == "ca":
+        F = np.array([[1, 1, .5, 0, 0, 0], [0, 1, 1, 0, 0, 0], [0, 0, 1, 0, 0, 0],
+                      [0, 0, 0, 1, 1, .5], [0, 0, 0, 0, 1, 1], [0, 0, 0, 0, 0, 1]], float)
+        H = np.array([[1, 0, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0]], float)
+        qb = np.array([[.25, .5, .5], [.5, 1, 1], [.5, 1, 1]], float)  # white-accel
+        Q = np.zeros((6, 6)); Q[:3, :3] = qb; Q[3:, 3:] = qb
+        return F, H, Q, [0, 3]
     F = np.array([[1, 1, 0, 0], [0, 1, 0, 0], [0, 0, 1, 1], [0, 0, 0, 1]], float)
     H = np.array([[1, 0, 0, 0], [0, 0, 1, 0]], float)
-    Q = q * np.array([[.25, .5, 0, 0], [.5, 1, 0, 0],
-                      [0, 0, .25, .5], [0, 0, .5, 1]], float)
-    R = r * np.eye(2)
+    Q = np.array([[.25, .5, 0, 0], [.5, 1, 0, 0],
+                  [0, 0, .25, .5], [0, 0, .5, 1]], float)
+    return F, H, Q, [0, 2]
+
+
+def kalman_full(idx, meas, q, r, model="cv"):
+    """Kalman forward + RTS smoother (constant-velocity or constant-acceleration);
+    returns smoothed (x,y) at EVERY grid index in [idx[0], idx[-1]] (gaps included,
+    via predict-only steps). CA adds an acceleration state so curved/accelerating
+    apparent motion is coasted more accurately across gaps (the paper's a-term)."""
+    F, H, Qu, obs = _motion_model(model)
+    Q = q * Qu; R = r * np.eye(2); d = F.shape[0]
     lo, hi = int(idx[0]), int(idx[-1]); n = hi - lo + 1
     mat = {int(i): m for i, m in zip(idx, meas)}
-    xs = np.zeros((n, 4)); Ps = np.zeros((n, 4, 4))
-    xp = np.zeros((n, 4)); Pp = np.zeros((n, 4, 4))
-    x = np.array([meas[0, 0], 0.0, meas[0, 1], 0.0]); P = np.eye(4) * 100.0
+    xs = np.zeros((n, d)); Ps = np.zeros((n, d, d))
+    xp = np.zeros((n, d)); Pp = np.zeros((n, d, d))
+    x = np.zeros(d); x[obs[0]] = meas[0, 0]; x[obs[1]] = meas[0, 1]
+    P = np.eye(d) * 100.0
     for k in range(n):
         gi = lo + k
         xpred = x if k == 0 else F @ xs[k - 1]
@@ -71,7 +89,7 @@ def kalman_full(idx, meas, q, r):
             S = H @ Ppred @ H.T + R
             K = Ppred @ H.T @ np.linalg.inv(S)
             x = xpred + K @ (mat[gi] - H @ xpred)
-            P = (np.eye(4) - K @ H) @ Ppred
+            P = (np.eye(d) - K @ H) @ Ppred
         else:
             x, P = xpred, Ppred
         xs[k], Ps[k] = x, P
@@ -79,11 +97,11 @@ def kalman_full(idx, meas, q, r):
     for k in range(n - 2, -1, -1):
         C = Ps[k] @ F.T @ np.linalg.inv(Pp[k + 1])
         xsm[k] = xs[k] + C @ (xsm[k + 1] - xp[k + 1])
-    return lo, xsm[:, [0, 2]]
+    return lo, xsm[:, obs]
 
 
 def coast_sequence(ev, seq, rows, cfg, q, r, min_dets, max_coast, extend,
-                   decay, multi_frac):
+                   decay, multi_frac, model="cv"):
     sn = sensor_for_sequence(seq)
     wins = D.make_window_grid(ev.t, cfg.window_us)
     idx_of = {w.start_us: k for k, w in enumerate(wins)}
@@ -100,7 +118,7 @@ def coast_sequence(ev, seq, rows, cfg, q, r, min_dets, max_coast, extend,
     if len(det) < min_dets:
         return _flat(rows, cfg), 0, "too few"
     di = np.array(sorted(det)); meas = np.array([[det[i][0], det[i][1]] for i in di], float)
-    lo, sm = kalman_full(di, meas, q, r)
+    lo, sm = kalman_full(di, meas, q, r, model=model)
     bw = float(np.median([det[i][2] for i in di]))
     bh = float(np.median([det[i][3] for i in di]))
     base = float(np.median([det[i][4] for i in di]))
@@ -156,6 +174,10 @@ def main():
     ap.add_argument("--extend", type=int, default=2, help="coast this many windows past each end")
     ap.add_argument("--decay", type=float, default=0.9, help="conf decay per coasted window")
     ap.add_argument("--multi-frac", type=float, default=0.15)
+    ap.add_argument("--motion", choices=["cv", "ca"], default="cv",
+                    help="coasting motion model: cv=constant-velocity (default), "
+                         "ca=constant-acceleration (adds an a-term so curved/accel "
+                         "apparent motion coasts more accurately across gaps).")
     args = ap.parse_args()
     cfg = DEFAULT_CONFIG
 
@@ -169,7 +191,8 @@ def main():
             continue
         ev = D.Events.from_npy(ep)
         dets, nc, why = coast_sequence(ev, seq, rows, cfg, args.q, args.r,
-            args.min_dets, args.max_coast, args.extend, args.decay, args.multi_frac)
+            args.min_dets, args.max_coast, args.extend, args.decay, args.multi_frac,
+            model=args.motion)
         D.write_predictions(os.path.join(args.out_dir, seq + D.GT_SUFFIX), dets)
         print(f"  {seq[:38]:38s} in={sum(len(v) for v in rows.values()):5d} "
               f"out={len(dets):5d}  {why}")
