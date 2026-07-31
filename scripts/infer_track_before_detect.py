@@ -274,7 +274,13 @@ def main():
             batch=args.batch,
             peak_floor=args.peak_floor,
         )
+        t_inf = time.perf_counter() - t0
+        n_cand = sum(len(p) for p in per_window)
+        print(f"       inference done in {t_inf:.1f}s over {len(wins)} windows "
+              f"({n_cand} candidate peaks); linking...", flush=True)
+        t1 = time.perf_counter()
         track = link_peaks(per_window, beam_cfg)
+        print(f"       beam link done in {time.perf_counter() - t1:.1f}s", flush=True)
         if track is None:
             detections = _fallback_top1(
                 per_window, sensor, args.fallback_thresh
