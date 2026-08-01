@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from orbitsight.config import DEFAULT_CONFIG, TRAIN_SEQUENCES, sensor_for_sequence
 from orbitsight.augment import AugCfg
+from orbitsight.inject import CropLibrary, InjectCfg
 from orbitsight.evt_centernet import EventCenterNet, build_targets, centernet_loss
 from scripts.train_transformer import WindowSet
 
@@ -116,6 +117,17 @@ def main():
                     help="aggressive dim-object augmentation: event-drop down to "
                          "~10%% of events (vs 30%%) so the model trains on 2-5 event "
                          "objects like Stars3/Thuraya3. Pair with --augment.")
+    ap.add_argument("--inject", action="store_true",
+                    help="sensor-realistic domain randomization: harvest real object "
+                         "crops from GT windows and paste them onto background-only "
+                         "windows along a randomized trajectory (velocity/accel/"
+                         "magnitude/polarity/hot-pixels/clutter/telescope-jitter/gaps). "
+                         "Manufactures dim moving-object positives the transform augs "
+                         "can't. Trajectory spans the full --context halo. Pair with "
+                         "--augment; A/B against it. Off by default.")
+    ap.add_argument("--inject-p", type=float, default=0.5,
+                    help="P(convert a background window into a synthetic positive) "
+                         "when --inject is set. Keep a real:synthetic mix (0.5 default).")
     ap.add_argument("--hard-neg", type=float, default=0.0,
                     help="online hard-negative mining weight: upweight the focal loss "
                          "on high-confidence STRICT-background cells (suppresses FPs "
@@ -160,10 +172,19 @@ def main():
     # aggressive dim-object augmentation: drop to as low as 10% of events (default
     # 30%), applied more often, to synthesize the 2-5 event/window dim regime.
     dim_cfg = AugCfg(drop_p=0.85, drop_min=0.10, noise=0.5) if args.dim_aug else None
+    # injection library: harvest real object crops + measure motion stats from the
+    # TRAIN split only (never val) so synthetic positives never leak into validation.
+    crop_lib = inject_cfg = None
+    if args.inject:
+        crop_lib = CropLibrary.from_windowset(
+            full.events, tr_items, full.sensors, window_us=DEFAULT_CONFIG.window_us)
+        inject_cfg = InjectCfg(p_inject=args.inject_p)
+        print(f"[inject] {crop_lib.summary()}")
     train_ds = WindowSet(None, None, DEFAULT_CONFIG, args.grid, args.tbins,
                          augment=args.augment, context=args.context, _items=tr_items,
                          _events=full.events, _sensors=full.sensors, aug_cfg=dim_cfg,
-                         time_surface=args.time_surface)
+                         time_surface=args.time_surface,
+                         inject=args.inject, inject_cfg=inject_cfg, crop_lib=crop_lib)
     val_ds = WindowSet(None, None, DEFAULT_CONFIG, args.grid, args.tbins,
                        augment=False, context=args.context, _items=va_items,
                        _events=full.events, _sensors=full.sensors,
@@ -212,7 +233,8 @@ def main():
                 "iou_size": bool(args.iou_size),
                 "iou_margin": args.iou_margin, "iou_lambda": args.iou_lambda,
                 "min_radius": args.min_radius,
-                "time_surface": bool(args.time_surface)}
+                "time_surface": bool(args.time_surface),
+                "inject": bool(args.inject), "inject_p": args.inject_p}
     if args.time_surface:
         print("[time-surface] TAR fusion ON: +2 exp-decay Time-Surface channels "
               f"(input C = {args.tbins * 2} -> {args.tbins * 2 + 2})")
@@ -229,6 +251,9 @@ def main():
     if args.dim_aug:
         print("[dim-aug] aggressive event-drop (keep 10-100%), noise 0.5 — "
               "synthesizing the 2-5 event dim regime")
+    if args.inject:
+        print(f"[inject] injection-based domain randomization ON, p={args.inject_p} "
+              "(real crops -> background windows, randomized trajectory + nuisances)")
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
 
     for ep in range(args.epochs):

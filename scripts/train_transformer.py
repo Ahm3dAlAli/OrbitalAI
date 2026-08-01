@@ -28,6 +28,7 @@ from orbitsight import data as D
 from orbitsight.config import DEFAULT_CONFIG, TRAIN_SEQUENCES, sensor_for_sequence
 from orbitsight.evt_model import EventTransformer, voxelize, box_giou
 from orbitsight.augment import augment as augment_events
+from orbitsight.inject import inject_window
 
 
 # --------------------------------------------------------------------------- #
@@ -37,13 +38,18 @@ class WindowSet(Dataset):
     def __init__(self, data_dir, sequences, cfg, grid, tbins,
                  neg_per_pos=1.5, seed=0, augment=False, context=0,
                  _items=None, _events=None, _sensors=None, aug_cfg=None,
-                 time_surface=False):
+                 time_surface=False, inject=False, inject_cfg=None, crop_lib=None):
         self.grid, self.tbins, self.cfg = grid, tbins, cfg
         self.time_surface = time_surface   # fuse Time-Surface channels (TAR)
         self.augment = augment
         self.aug_cfg = aug_cfg          # None -> default AugCfg; else an override
         self.context = context          # +/- windows of temporal context
         self._rng = np.random.default_rng(seed + 7)
+        # injection-based domain randomization: paste real object crops onto
+        # background-only windows along a randomized trajectory (orbitsight.inject)
+        self.inject = inject
+        self.inject_cfg = inject_cfg
+        self.crop_lib = crop_lib
         # Shared-split constructor: reuse another set's loaded events + a
         # pre-selected item list (used to make a leakage-safe val split without
         # re-loading the multi-GB event arrays).
@@ -89,6 +95,7 @@ class WindowSet(Dataset):
         seq, lo, hi, ws, we, box = self.items[i]
         ev = self.events[seq]
         sn = self.sensors[seq]
+        ws0, we0 = ws, we               # center window (GT box target) before widening
         # temporal context: widen the voxel to +/- `context` windows so the
         # model sees the object's TRACK (many windows of evidence), not one
         # 40 ms slice.  The GT box target stays the CENTER window.
@@ -103,6 +110,15 @@ class WindowSet(Dataset):
         yn = ev.y[lo:hi].astype(np.float64) / sn.height
         pol = ev.pol[lo:hi]
         t = ev.t[lo:hi]
+        # injection: turn a background-only window into a synthetic positive with
+        # a trajectory-consistent moving object + sensor nuisances. Only on
+        # negatives (box is None) so real GT stays untouched; runs before the
+        # transform augmentation, which then adds flip/drop/noise diversity.
+        if (self.inject and box is None and self.crop_lib is not None
+                and self._rng.random() < self.inject_cfg.p_inject):
+            xn, yn, pol, t, box = inject_window(
+                xn, yn, pol, t, sn, ws, we, ws0, we0, self.cfg.window_us,
+                self.crop_lib, self._rng, self.inject_cfg)
         if self.augment:
             if self.aug_cfg is not None:
                 xn, yn, pol, t, box = augment_events(xn, yn, pol, t, box, ws, we,
