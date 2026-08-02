@@ -128,6 +128,11 @@ def main():
     ap.add_argument("--inject-p", type=float, default=0.5,
                     help="P(convert a background window into a synthetic positive) "
                          "when --inject is set. Keep a real:synthetic mix (0.5 default).")
+    ap.add_argument("--inject-conservative", action="store_true",
+                    help="use the CONSERVATIVE injection preset (regularize, don't replace "
+                         "the real prior): accel off, magnitude 0.40-1.10, gaps 0.10, mild "
+                         "nuisances, min 3 center events, speed floor. The broad default "
+                         "was falsified on Thuraya3 (-0.17). Pair with --inject-p 0.15.")
     ap.add_argument("--hard-neg", type=float, default=0.0,
                     help="online hard-negative mining weight: upweight the focal loss "
                          "on high-confidence STRICT-background cells (suppresses FPs "
@@ -178,7 +183,8 @@ def main():
     if args.inject:
         crop_lib = CropLibrary.from_windowset(
             full.events, tr_items, full.sensors, window_us=DEFAULT_CONFIG.window_us)
-        inject_cfg = InjectCfg(p_inject=args.inject_p)
+        inject_cfg = (InjectCfg.conservative(args.inject_p) if args.inject_conservative
+                      else InjectCfg(p_inject=args.inject_p))
         print(f"[inject] {crop_lib.summary()}")
     train_ds = WindowSet(None, None, DEFAULT_CONFIG, args.grid, args.tbins,
                          augment=args.augment, context=args.context, _items=tr_items,

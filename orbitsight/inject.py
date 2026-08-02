@@ -181,6 +181,20 @@ class InjectCfg:
     p_gap: float = 0.35          # P(object absent in a non-center window) -> temporal gap
     size_jitter: float = 0.20    # +/- fractional crop/box size randomization
     margin_frac: float = 0.06    # keep trajectory this far (frac of frame) from edges
+    min_center_events: int = 0   # if >0: relabel as BACKGROUND (no box) any synthetic
+                                 # whose center window has < this many events -> never
+                                 # train a positive heatmap for an effectively-absent obj
+    v_px_min_frac: float = 0.0   # speed floor as a fraction of v_cap (avoid near-static
+                                 # synthetics that look like hot pixels / stars)
+
+    @classmethod
+    def conservative(cls, p_inject=0.15):
+        """Regularize (not replace) the real prior: fewer synthetics, realistic
+        magnitude/motion, mild nuisances, acceleration OFF, min-event guard. Use this
+        after the broad default was falsified (Thuraya3 injection A/B, -0.17)."""
+        return cls(p_inject=p_inject, a_px_max=0.0, mag_lo=0.40, mag_hi=1.10,
+                   p_gap=0.10, p_hot=0.10, p_clutter=0.15, p_pol_imbalance=0.15,
+                   min_center_events=3, v_px_min_frac=0.35)
 
 
 # --------------------------------------------------------------------------- #
@@ -232,7 +246,7 @@ def inject_window(xn, yn, pol, t, sensor, ws, we, ws0, we0, window_us,
     v_cap = cfg.v_px_max if cfg.v_px_max > 0 else max(
         lib.vel_px90.get(sensor.name, 0.0), cfg.v_px_floor)
     ang = rng.uniform(0, 2 * np.pi)
-    speed = rng.uniform(0, v_cap)
+    speed = rng.uniform(cfg.v_px_min_frac * v_cap, v_cap)   # floor avoids near-static
     vx, vy = speed * np.cos(ang), speed * np.sin(ang)
     ax = rng.uniform(-cfg.a_px_max, cfg.a_px_max)
     ay = rng.uniform(-cfg.a_px_max, cfg.a_px_max)
@@ -255,6 +269,7 @@ def inject_window(xn, yn, pol, t, sensor, ws, we, ws0, we0, window_us,
     # --- emit the crop at each window (magnitude scaling + temporal gaps) ----- #
     ox_list, oy_list, op_list, ot_list = [], [], [], []
     n_crop = crop.dx.size
+    n_center = 0                                           # events at the center window
     pol_bias = None
     if rng.random() < cfg.p_pol_imbalance:
         pol_bias = (int(rng.integers(2)),
@@ -269,6 +284,8 @@ def inject_window(xn, yn, pol, t, sensor, ws, we, ws0, we0, window_us,
                 keep[rng.integers(n_crop)] = True
             else:
                 continue
+        if k == c_idx:
+            n_center = int(keep.sum())
         ex = cxk[k] + crop.dx[keep] * sf
         ey = cyk[k] + crop.dy[keep] * sf
         et = starts[k] + crop.rel[keep] * wu
@@ -279,6 +296,11 @@ def inject_window(xn, yn, pol, t, sensor, ws, we, ws0, we0, window_us,
             ep[flip] = sign
         ox_list.append(ex); oy_list.append(ey)
         op_list.append(ep); ot_list.append(et)
+
+    # min-event guard: if the object is effectively absent at the center window, keep the
+    # window as BACKGROUND rather than training a positive heatmap for near-zero evidence.
+    if cfg.min_center_events > 0 and n_center < cfg.min_center_events:
+        return xn, yn, pol, t, None
 
     add_x = [xn * W]; add_y = [yn * H]
     add_p = [pol]; add_t = [t]
