@@ -138,8 +138,9 @@ python3 scripts/evaluate_wrapper.py --dataset "${DATASET}" \
     --pred-dir "${OUT}" --excel-out "${OUT}/Evaluation_Metrics.xlsx" || \
     echo "[run_infer] (evaluation skipped — GT not available)"
 
-# Portal format: one detection per row (sequence_id, timestamp_us, x, y, w, h,
-# class_id, confidence) as <sequencename>.txt, in the same collected folder.
+# Portal format: one detection per row (sequence_id, window_start_timestamp_us,
+# window_end_timestamp_us, x_centre, y_centre, w, h, class_id, confidence) as
+# <sequencename>.txt, in the same collected folder.
 echo "[run_infer] writing portal <sequencename>.txt files"
 python3 scripts/to_portal_format.py --pred-dir "${OUT}" \
     --class-id "${ORBITSIGHT_CLASS_ID:-0}" || \

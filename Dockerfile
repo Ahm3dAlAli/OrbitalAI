@@ -70,8 +70,9 @@ ENV KMP_DUPLICATE_LIB_OK=TRUE \
 # Automatic, non-interactive entrypoint: the deployed pipeline runs to completion
 # with no shell interaction. Writes into the portal-collected folder
 # /work/OrbitalAI/DDMMYYYY:
-#   - <sequencename>.txt        one detection/row: sequence_id, timestamp_us, x, y,
-#                               w, h, class_id, confidence
+#   - <sequencename>.txt        one detection/row: sequence_id,
+#                               window_start_timestamp_us, window_end_timestamp_us,
+#                               x_centre, y_centre, w, h, class_id, confidence
 #   - Evaluation_Metrics.xlsx   scoring sheet (when GT is present)
 CMD ["sh", "run_infer.sh"]
 

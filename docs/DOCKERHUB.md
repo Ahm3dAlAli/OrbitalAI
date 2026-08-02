@@ -38,7 +38,7 @@ scoring sheet, all into the output folder.
 ## Outputs (written to `/work/OrbitalAI/DDMMYYYY`)
 
 - **`<sequencename>.txt`** — one detection per row, header + 8 fields:
-  `sequence_id, timestamp_us, x, y, w, h, class_id, confidence`
+  `sequence_id, window_start_timestamp_us, window_end_timestamp_us, x_centre, y_centre, w, h, class_id, confidence`
 - **`Evaluation_Metrics.xlsx`** — precision / recall / F1 / mAP@0.5 (when ground truth is present)
 
 ## The deployed pipeline (per-sensor router)

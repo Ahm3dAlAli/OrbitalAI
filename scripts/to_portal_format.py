@@ -7,12 +7,14 @@ Internal files  : <seq>_bb_windows_40ms.txt  (tab-separated, header:
 
 Portal files    : <seq>.txt  — ONE DETECTION PER ROW with the fields the portal
     collects (header included):
-        sequence_id, timestamp_us, x, y, w, h, class_id, confidence
+        sequence_id, window_start_timestamp_us, window_end_timestamp_us,
+        x_centre, y_centre, w, h, class_id, confidence
 
-Mapping: sequence_id = sequence name; timestamp_us = window_start; (x,y) = box
-centre; (w,h) = box size; class_id = RSO class (default 0, single class);
-confidence carried through. The internal files and Evaluation_Metrics.xlsx are
-left in place — this only ADDS the <seq>.txt portal files to the same folder.
+Mapping: sequence_id = sequence name; the two window timestamps carried through;
+(x_centre,y_centre) = box centre; (w,h) = box size; class_id = RSO class (default
+0, single class); confidence carried through. The internal files and
+Evaluation_Metrics.xlsx are left in place — this only ADDS the <seq>.txt portal
+files to the same folder.
 
     python3 scripts/to_portal_format.py --pred-dir /work/OrbitalAI/DDMMYYYY \
         --class-id 0 --delimiter ,
@@ -25,7 +27,9 @@ import glob
 import os
 
 INT_SUFFIX = "_bb_windows_40ms.txt"
-FIELDS = ["sequence_id", "timestamp_us", "x", "y", "w", "h", "class_id", "confidence"]
+# Portal contract (TII OrbitSight, 2026): one detection/row, exactly these 9 fields.
+FIELDS = ["sequence_id", "window_start_timestamp_us", "window_end_timestamp_us",
+          "x_centre", "y_centre", "w", "h", "class_id", "confidence"]
 
 
 def convert_file(path, out_dir, class_id, delim):
@@ -36,6 +40,7 @@ def convert_file(path, out_dir, class_id, delim):
             rows.append([
                 seq,
                 int(r["window_start_timestamp_us"]),
+                int(r["window_end_timestamp_us"]),
                 int(float(r["center_x"])), int(float(r["center_y"])),
                 int(float(r["width"])),    int(float(r["height"])),
                 class_id,
