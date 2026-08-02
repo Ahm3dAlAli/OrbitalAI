@@ -30,7 +30,7 @@ import torch.nn.functional as F
 #  Event representation — sparse voxel grid (resolution-agnostic)
 # --------------------------------------------------------------------------- #
 def voxelize(x, y, pol, t, ws, we, width, height, grid=64, tbins=3,
-             time_surface=False, ts_tau=0.3):
+             time_surface=False, ts_tau=0.3, motion_comp=False):
     """Accumulate a window's events into a (C, grid, grid) voxel tensor.
 
     Coordinates are normalized by the sensor size before gridding, so the same
@@ -45,8 +45,17 @@ def voxelize(x, y, pol, t, ws, we, width, height, grid=64, tbins=3,
     the count frame so the model sees both. `ts_tau` is the decay time-constant as
     a fraction of the window duration. Off by default -> C = tbins*2 (unchanged);
     checkpoints trained without it reconstruct the exact same channel layout.
+
+    `motion_comp` appends 2 **global-motion-stabilized** channels (for star fields
+    like Stars3): estimate the dominant per-time-bin image-plane translation from the
+    event centroid (the star field dominates the count, so its centroid tracks the
+    telescope-induced global motion), warp every bin into the center frame, and
+    accumulate polarity-split. Coherently-moving stars ALIGN and sharpen; a real RSO
+    moving differently from the field SMEARS. The model sees raw (both coherent) AND
+    stabilized (stars sharp, RSO smeared) -> the residual is the discriminator that
+    coherence alone cannot provide. Off by default -> channel layout unchanged.
     """
-    C = tbins * 2 + (2 if time_surface else 0)
+    C = tbins * 2 + (2 if time_surface else 0) + (2 if motion_comp else 0)
     vox = np.zeros((C, grid, grid), dtype=np.float32)
     if x.size == 0:
         return vox
@@ -71,6 +80,26 @@ def voxelize(x, y, pol, t, ws, we, width, height, grid=64, tbins=3,
         surf = vox[base:base + 2]
         occ = surf > 0
         surf[occ] = np.exp(-(1.0 - surf[occ]) / ts_tau)
+    if motion_comp:
+        mb = tbins * 2 + (2 if time_surface else 0)   # base index for the +2 stab channels
+        cb = tbins // 2                               # center time-bin
+        cen = tb == cb
+        if cen.any():
+            ccx, ccy = gx[cen].mean(), gy[cen].mean()
+            wgx = gx.astype(np.float64); wgy = gy.astype(np.float64)
+            for k in range(tbins):
+                if k == cb:
+                    continue
+                mk = tb == k
+                if not mk.any():
+                    continue
+                # shift that aligns bin-k's dominant (star-field) motion to the center
+                wgx = np.where(mk, wgx + (ccx - gx[mk].mean()), wgx)
+                wgy = np.where(mk, wgy + (ccy - gy[mk].mean()), wgy)
+            wxi = np.clip(wgx, 0, grid - 1).astype(np.int64)
+            wyi = np.clip(wgy, 0, grid - 1).astype(np.int64)
+            np.add.at(vox, (mb + p, wyi, wxi), 1.0)
+            np.log1p(vox[mb:mb + 2], out=vox[mb:mb + 2])
     return vox
 
 

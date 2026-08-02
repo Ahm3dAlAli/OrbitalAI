@@ -156,6 +156,13 @@ def main():
                          "(C = tbins*2 -> tbins*2+2). Encodes local motion the raw "
                          "count bins wash out. A/B against the count-only voxel. "
                          "Off by default; requires retraining (input channels change).")
+    ap.add_argument("--motion-comp", action="store_true",
+                    help="fuse 2 GLOBAL-MOTION-STABILIZED channels (star-field lever, e.g. "
+                         "Stars3): estimate per-time-bin global image-plane motion from the "
+                         "event centroid, warp bins into the center frame, accumulate "
+                         "polarity-split. Stars align/sharpen; a differently-moving RSO "
+                         "smears -> the raw-vs-stabilized residual separates object from "
+                         "moving stars. C = tbins*2 -> +2. Requires retraining.")
     ap.add_argument("--min-radius", type=int, default=1,
                     help="floor for the heatmap Gaussian splat radius (cells). The "
                          "0.3*max(w,h) formula collapses to ~1 cell for a ~10 px object, "
@@ -189,12 +196,12 @@ def main():
     train_ds = WindowSet(None, None, DEFAULT_CONFIG, args.grid, args.tbins,
                          augment=args.augment, context=args.context, _items=tr_items,
                          _events=full.events, _sensors=full.sensors, aug_cfg=dim_cfg,
-                         time_surface=args.time_surface,
+                         time_surface=args.time_surface, motion_comp=args.motion_comp,
                          inject=args.inject, inject_cfg=inject_cfg, crop_lib=crop_lib)
     val_ds = WindowSet(None, None, DEFAULT_CONFIG, args.grid, args.tbins,
                        augment=False, context=args.context, _items=va_items,
                        _events=full.events, _sensors=full.sensors,
-                       time_surface=args.time_surface)
+                       time_surface=args.time_surface, motion_comp=args.motion_comp)
     print(f"[data] train={len(train_ds)} val={len(val_ds)}  aug={'ON' if args.augment else 'off'}")
     pin = device == "cuda"
     reweight = (args.dvx_weight != 1.0 or args.evk4_weight != 1.0
@@ -222,7 +229,8 @@ def main():
 
     model = EventCenterNet(grid=args.grid, patch=args.patch, tbins=args.tbins,
                            dim=args.dim, hm_div=args.hm_div, enc_layers=args.enc_layers,
-                           variant=args.variant, time_surface=args.time_surface).to(device)
+                           variant=args.variant, time_surface=args.time_surface,
+                           motion_comp=args.motion_comp).to(device)
     hm_size = model.hm
     print(f"[model] CenterNet-{args.variant.upper()} hm={hm_size} "
           f"{sum(p.numel() for p in model.parameters())/1e6:.2f}M params")
@@ -240,6 +248,7 @@ def main():
                 "iou_margin": args.iou_margin, "iou_lambda": args.iou_lambda,
                 "min_radius": args.min_radius,
                 "time_surface": bool(args.time_surface),
+                "motion_comp": bool(args.motion_comp),
                 "inject": bool(args.inject), "inject_p": args.inject_p}
     if args.time_surface:
         print("[time-surface] TAR fusion ON: +2 exp-decay Time-Surface channels "
