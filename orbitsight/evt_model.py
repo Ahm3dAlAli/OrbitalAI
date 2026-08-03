@@ -66,7 +66,11 @@ def voxelize(x, y, pol, t, ws, we, width, height, grid=64, tbins=3,
     tb = np.clip((rel * tbins).astype(np.int64), 0, tbins - 1)
     p = (pol > 0).astype(np.int64)
     ch = tb * 2 + p
-    np.add.at(vox, (ch, gy, gx), 1.0)
+    # accumulate via bincount (buffered; ~10-50x faster than np.add.at on dense windows)
+    nc = tbins * 2
+    flat = (ch * grid + gy) * grid + gx
+    vox[:nc] += np.bincount(flat, minlength=nc * grid * grid).reshape(
+        nc, grid, grid).astype(np.float32)
     # log compression tames the dense-EVK4 vs sparse-DVX count gap (count channels only)
     np.log1p(vox[:tbins * 2], out=vox[:tbins * 2])
     if time_surface:
@@ -98,7 +102,9 @@ def voxelize(x, y, pol, t, ws, we, width, height, grid=64, tbins=3,
                 wgy = np.where(mk, wgy + (ccy - gy[mk].mean()), wgy)
             wxi = np.clip(wgx, 0, grid - 1).astype(np.int64)
             wyi = np.clip(wgy, 0, grid - 1).astype(np.int64)
-            np.add.at(vox, (mb + p, wyi, wxi), 1.0)
+            mflat = (p * grid + wyi) * grid + wxi
+            vox[mb:mb + 2] += np.bincount(mflat, minlength=2 * grid * grid).reshape(
+                2, grid, grid).astype(np.float32)
             np.log1p(vox[mb:mb + 2], out=vox[mb:mb + 2])
     return vox
 
