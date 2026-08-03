@@ -91,15 +91,16 @@ def voxelize(x, y, pol, t, ws, we, width, height, grid=64, tbins=3,
         if cen.any():
             ccx, ccy = gx[cen].mean(), gy[cen].mean()
             wgx = gx.astype(np.float64); wgy = gy.astype(np.float64)
-            for k in range(tbins):
-                if k == cb:
-                    continue
-                mk = tb == k
-                if not mk.any():
-                    continue
-                # shift that aligns bin-k's dominant (star-field) motion to the center
-                wgx = np.where(mk, wgx + (ccx - gx[mk].mean()), wgx)
-                wgy = np.where(mk, wgy + (ccy - gy[mk].mean()), wgy)
+            # per-bin centroid via one grouped pass (no per-bin np.where over all events)
+            binsum_x = np.bincount(tb, weights=gx, minlength=tbins)
+            binsum_y = np.bincount(tb, weights=gy, minlength=tbins)
+            bincnt = np.bincount(tb, minlength=tbins).astype(np.float64)
+            nz = bincnt > 0
+            bmx = np.zeros(tbins); bmy = np.zeros(tbins)
+            bmx[nz] = binsum_x[nz] / bincnt[nz]; bmy[nz] = binsum_y[nz] / bincnt[nz]
+            shx = np.where(nz, ccx - bmx, 0.0); shy = np.where(nz, ccy - bmy, 0.0)
+            shx[cb] = 0.0; shy[cb] = 0.0                # center bin unshifted
+            wgx = wgx + shx[tb]; wgy = wgy + shy[tb]    # vectorized: shift per event's bin
             wxi = np.clip(wgx, 0, grid - 1).astype(np.int64)
             wyi = np.clip(wgy, 0, grid - 1).astype(np.int64)
             mflat = (p * grid + wyi) * grid + wxi
